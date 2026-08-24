@@ -1,13 +1,22 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import {
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
+
 import { useRouter } from "next/navigation";
+
 import * as XLSX from "xlsx";
 
 import { createClient } from "@/lib/supabase/client";
 import ThemeToggle from "@/components/theme-toggle";
 
-type Role = "reader" | "editor" | "superuser";
+type Role =
+  | "reader"
+  | "editor"
+  | "superuser";
 
 type Profile = {
   role: Role;
@@ -26,7 +35,11 @@ type CustomField = {
   id: string;
   field_key: string;
   label: string;
-  field_type: "text" | "number" | "date" | "boolean";
+  field_type:
+    | "text"
+    | "number"
+    | "date"
+    | "boolean";
   visible: boolean;
   required: boolean;
   sort_order: number;
@@ -43,280 +56,362 @@ type FreightService = {
   container: string | null;
   weight: number | null;
   destination: string | null;
-  rodrigo_cash_freight: number;
-  invoice_freight: number;
-  carlos_cash_advance: number;
-  carlos_invoice_payment: number;
+  rodrigo_cash_freight:
+    | number
+    | null;
+  invoice_freight:
+    | number
+    | null;
+  carlos_cash_advance:
+    | number
+    | null;
+  carlos_invoice_payment:
+    | number
+    | null;
   observations: string | null;
-  custom_fields: Record<string, unknown> | null;
+  custom_fields:
+    | Record<
+        string,
+        unknown
+      >
+    | null;
 };
 
 export default function FletesPage() {
-  const router = useRouter();
+  const router =
+    useRouter();
 
-  const supabase = useMemo(
-    () => createClient(),
-    []
-  );
+  const supabase =
+    useMemo(
+      () => createClient(),
+      []
+    );
 
-  const [profile, setProfile] =
-    useState<Profile | null>(null);
+  const [
+    profile,
+    setProfile,
+  ] =
+    useState<Profile | null>(
+      null
+    );
 
-  const [services, setServices] =
-    useState<FreightService[]>([]);
+  const [
+    services,
+    setServices,
+  ] =
+    useState<FreightService[]>(
+      []
+    );
 
-  const [mainColumns, setMainColumns] =
-    useState<MainColumn[]>([]);
+  const [
+    mainColumns,
+    setMainColumns,
+  ] =
+    useState<MainColumn[]>(
+      []
+    );
 
-  const [customFields, setCustomFields] =
-    useState<CustomField[]>([]);
+  const [
+    customFields,
+    setCustomFields,
+  ] =
+    useState<CustomField[]>(
+      []
+    );
 
-  const [loading, setLoading] =
+  const [
+    loading,
+    setLoading,
+  ] =
     useState(true);
 
-  const [search, setSearch] =
+  const [
+    search,
+    setSearch,
+  ] =
     useState("");
 
   const [
     errorMessage,
     setErrorMessage,
-  ] = useState("");
+  ] =
+    useState("");
 
   const [
-    exportingExcel,
-    setExportingExcel,
-  ] = useState(false);
-
-  // =========================================================
-  // CARGAR DATOS
-  // =========================================================
+    deletingId,
+    setDeletingId,
+  ] =
+    useState<string | null>(
+      null
+    );
 
   useEffect(() => {
+    let mounted = true;
+
     async function loadData() {
-      setLoading(true);
-      setErrorMessage("");
+      try {
+        setLoading(true);
+        setErrorMessage("");
 
-      // =====================================================
-      // USUARIO ACTUAL
-      // =====================================================
+        const {
+          data: { user },
+          error: userError,
+        } =
+          await supabase.auth.getUser();
 
-      const {
-        data: { user },
-        error: userError,
-      } = await supabase.auth.getUser();
+        if (
+          userError ||
+          !user
+        ) {
+          router.replace(
+            "/login"
+          );
 
-      if (userError || !user) {
-        router.replace("/login");
-        return;
-      }
+          return;
+        }
 
-      // =====================================================
-      // PERFIL / ROL
-      // =====================================================
+        const {
+          data:
+            profileData,
+          error:
+            profileError,
+        } = await supabase
+          .from("profiles")
+          .select(
+            "role, active"
+          )
+          .eq(
+            "id",
+            user.id
+          )
+          .single();
 
-      const {
-        data: profileData,
-        error: profileError,
-      } = await supabase
-        .from("profiles")
-        .select(`
-          role,
-          active
-        `)
-        .eq("id", user.id)
-        .single();
+        if (
+          profileError ||
+          !profileData ||
+          !profileData.active
+        ) {
+          await supabase.auth.signOut();
 
-      if (
-        profileError ||
-        !profileData ||
-        !profileData.active
-      ) {
-        await supabase.auth.signOut();
+          router.replace(
+            "/login"
+          );
 
-        router.replace("/login");
-        return;
-      }
+          return;
+        }
 
-      setProfile(
-        profileData as Profile
-      );
+        const [
+          mainResult,
+          customResult,
+          freightResult,
+        ] =
+          await Promise.all([
+            supabase
+              .from(
+                "freight_column_settings"
+              )
+              .select(
+                `
+                id,
+                column_key,
+                label,
+                visible,
+                sort_order
+                `
+              )
+              .eq(
+                "visible",
+                true
+              )
+              .order(
+                "sort_order",
+                {
+                  ascending:
+                    true,
+                }
+              ),
 
-      // =====================================================
-      // COLUMNAS PRINCIPALES VISIBLES
-      // =====================================================
+            supabase
+              .from(
+                "freight_custom_fields"
+              )
+              .select(
+                `
+                id,
+                field_key,
+                label,
+                field_type,
+                visible,
+                required,
+                sort_order
+                `
+              )
+              .eq(
+                "visible",
+                true
+              )
+              .order(
+                "sort_order",
+                {
+                  ascending:
+                    true,
+                }
+              )
+              .order(
+                "created_at",
+                {
+                  ascending:
+                    true,
+                }
+              ),
 
-      const {
-        data: mainColumnsData,
-        error: mainColumnsError,
-      } = await supabase
-        .from(
-          "freight_column_settings"
-        )
-        .select(`
-          id,
-          column_key,
-          label,
-          visible,
-          sort_order
-        `)
-        .eq("visible", true)
-        .order("sort_order", {
-          ascending: true,
-        });
+            supabase
+              .from(
+                "freight_services"
+              )
+              .select("*")
+              .order(
+                "service_date",
+                {
+                  ascending:
+                    false,
+                }
+              )
+              .order(
+                "folio",
+                {
+                  ascending:
+                    false,
+                }
+              ),
+          ]);
 
-      if (mainColumnsError) {
-        setErrorMessage(
-          `No se pudieron cargar las columnas: ${mainColumnsError.message}`
+        if (
+          mainResult.error
+        ) {
+          throw mainResult.error;
+        }
+
+        if (
+          customResult.error
+        ) {
+          throw customResult.error;
+        }
+
+        if (
+          freightResult.error
+        ) {
+          throw freightResult.error;
+        }
+
+        if (!mounted) {
+          return;
+        }
+
+        setProfile(
+          profileData as Profile
         );
 
-        setLoading(false);
-        return;
-      }
-
-      setMainColumns(
-        (mainColumnsData ??
-          []) as MainColumn[]
-      );
-
-      // =====================================================
-      // CAMPOS PERSONALIZADOS VISIBLES
-      // =====================================================
-
-      const {
-        data: customFieldsData,
-        error: customFieldsError,
-      } = await supabase
-        .from(
-          "freight_custom_fields"
-        )
-        .select(`
-          id,
-          field_key,
-          label,
-          field_type,
-          visible,
-          required,
-          sort_order
-        `)
-        .eq("visible", true)
-        .order("sort_order", {
-          ascending: true,
-        })
-        .order("created_at", {
-          ascending: true,
-        });
-
-      if (customFieldsError) {
-        setErrorMessage(
-          `No se pudieron cargar los campos personalizados: ${customFieldsError.message}`
+        setMainColumns(
+          (mainResult.data ??
+            []) as MainColumn[]
         );
 
-        setLoading(false);
-        return;
-      }
-
-      setCustomFields(
-        (customFieldsData ??
-          []) as CustomField[]
-      );
-
-      // =====================================================
-      // FLETES
-      // =====================================================
-
-      const {
-        data: freightData,
-        error: freightError,
-      } = await supabase
-        .from("freight_services")
-        .select("*")
-        .order("service_date", {
-          ascending: false,
-        })
-        .order("folio", {
-          ascending: false,
-        });
-
-      if (freightError) {
-        setErrorMessage(
-          `No se pudieron cargar los fletes: ${freightError.message}`
+        setCustomFields(
+          (customResult.data ??
+            []) as CustomField[]
         );
 
-        setLoading(false);
-        return;
+        setServices(
+          (freightResult.data ??
+            []) as FreightService[]
+        );
+      } catch (error) {
+        console.error(error);
+
+        setErrorMessage(
+          error instanceof Error
+            ? error.message
+            : "No se pudieron cargar los fletes."
+        );
+      } finally {
+        if (mounted) {
+          setLoading(false);
+        }
       }
-
-      setServices(
-        (freightData ??
-          []) as FreightService[]
-      );
-
-      setLoading(false);
     }
 
-    loadData();
+    void loadData();
+
+    return () => {
+      mounted = false;
+    };
   }, [router, supabase]);
 
-  // =========================================================
-  // PERMISOS
-  // =========================================================
-
   const canEdit =
-    profile?.role === "editor" ||
-    profile?.role === "superuser";
+    profile?.role ===
+      "editor" ||
+    profile?.role ===
+      "superuser";
 
   const canDelete =
-    profile?.role === "superuser";
+    profile?.role ===
+    "superuser";
 
   const isSuperuser =
-    profile?.role === "superuser";
-
-  // =========================================================
-  // BÚSQUEDA
-  // =========================================================
+    profile?.role ===
+    "superuser";
 
   const filteredServices =
-    services.filter((service) => {
-      const dynamicValues =
-        Object.values(
-          service.custom_fields ?? {}
-        );
-
-      const text = [
-        service.folio,
-        service.service_date,
-        service.unit,
-        service.invoice,
-        service.client,
-        service.service_type,
-        service.container,
-        service.weight,
-        service.destination,
-        service.rodrigo_cash_freight,
-        service.invoice_freight,
-        service.carlos_cash_advance,
-        service.carlos_invoice_payment,
-        service.observations,
-        ...dynamicValues,
-      ]
-        .filter(
-          (value) =>
-            value !== null &&
-            value !== undefined
-        )
-        .join(" ")
-        .toLowerCase();
-
-      return text.includes(
+    useMemo(() => {
+      const term =
         search
           .trim()
-          .toLowerCase()
-      );
-    });
+          .toLowerCase();
 
-  // =========================================================
-  // FORMATO DE MONEDA
-  // =========================================================
+      if (!term) {
+        return services;
+      }
+
+      return services.filter(
+        (service) => {
+          const values = [
+            service.folio,
+            service.service_date,
+            service.unit,
+            service.invoice,
+            service.client,
+            service.service_type,
+            service.container,
+            service.weight,
+            service.destination,
+            service.rodrigo_cash_freight,
+            service.invoice_freight,
+            service.carlos_cash_advance,
+            service.carlos_invoice_payment,
+            service.observations,
+            ...Object.values(
+              service.custom_fields ??
+                {}
+            ),
+          ];
+
+          return values
+            .filter(
+              (value) =>
+                value !== null &&
+                value !==
+                  undefined
+            )
+            .join(" ")
+            .toLowerCase()
+            .includes(term);
+        }
+      );
+    }, [
+      search,
+      services,
+    ]);
 
   function formatMoney(
     value:
@@ -329,17 +424,18 @@ export default function FletesPage() {
       {
         style: "currency",
         currency: "MXN",
-        minimumFractionDigits: 2,
+        minimumFractionDigits:
+          2,
       }
-    ).format(value ?? 0);
+    ).format(
+      value ?? 0
+    );
   }
 
-  // =========================================================
-  // FORMATO DE FECHA
-  // =========================================================
-
   function formatDate(
-    value: string | null
+    value:
+      | string
+      | null
   ) {
     if (!value) {
       return "—";
@@ -349,7 +445,8 @@ export default function FletesPage() {
       year,
       month,
       day,
-    ] = value.split("-");
+    ] =
+      value.split("-");
 
     if (
       !year ||
@@ -362,19 +459,18 @@ export default function FletesPage() {
     return `${day}/${month}/${year}`;
   }
 
-  // =========================================================
-  // VALOR DE COLUMNA PRINCIPAL
-  // =========================================================
-
   function renderMainColumn(
     service: FreightService,
-    columnKey: string
+    key: string
   ) {
-    switch (columnKey) {
+    switch (key) {
       case "folio":
         return `F-${String(
           service.folio
-        ).padStart(4, "0")}`;
+        ).padStart(
+          4,
+          "0"
+        )}`;
 
       case "service_date":
         return formatDate(
@@ -383,38 +479,42 @@ export default function FletesPage() {
 
       case "unit":
         return (
-          service.unit || "—"
+          service.unit ?? "—"
         );
 
       case "invoice":
         return (
-          service.invoice || "—"
+          service.invoice ??
+          "—"
         );
 
       case "client":
         return (
-          service.client || "—"
+          service.client ??
+          "—"
         );
 
       case "service_type":
         return (
-          service.service_type ||
+          service.service_type ??
           "—"
         );
 
       case "container":
         return (
-          service.container || "—"
+          service.container ??
+          "—"
         );
 
       case "weight":
         return (
-          service.weight ?? "—"
+          service.weight ??
+          "—"
         );
 
       case "destination":
         return (
-          service.destination ||
+          service.destination ??
           "—"
         );
 
@@ -440,7 +540,7 @@ export default function FletesPage() {
 
       case "observations":
         return (
-          service.observations ||
+          service.observations ??
           "—"
         );
 
@@ -449,89 +549,65 @@ export default function FletesPage() {
     }
   }
 
-  // =========================================================
-  // VALOR PARA EXCEL
-  // =========================================================
-
-  function getExcelMainValue(
+  function rawMainValue(
     service: FreightService,
-    columnKey: string
-  ):
-    | string
-    | number
-    | boolean {
-    switch (columnKey) {
+    key: string
+  ): unknown {
+    switch (key) {
       case "folio":
         return `F-${String(
           service.folio
-        ).padStart(4, "0")}`;
+        ).padStart(
+          4,
+          "0"
+        )}`;
 
       case "service_date":
-        return formatDate(
-          service.service_date
-        );
+        return service.service_date;
 
       case "unit":
-        return service.unit ?? "";
+        return service.unit;
 
       case "invoice":
-        return service.invoice ?? "";
+        return service.invoice;
 
       case "client":
-        return service.client ?? "";
+        return service.client;
 
       case "service_type":
-        return service.service_type ?? "";
+        return service.service_type;
 
       case "container":
-        return service.container ?? "";
+        return service.container;
 
       case "weight":
-        return service.weight ?? "";
+        return service.weight;
 
       case "destination":
-        return service.destination ?? "";
+        return service.destination;
 
       case "rodrigo_cash_freight":
-        return (
-          service.rodrigo_cash_freight ??
-          0
-        );
+        return service.rodrigo_cash_freight;
 
       case "invoice_freight":
-        return (
-          service.invoice_freight ??
-          0
-        );
+        return service.invoice_freight;
 
       case "carlos_cash_advance":
-        return (
-          service.carlos_cash_advance ??
-          0
-        );
+        return service.carlos_cash_advance;
 
       case "carlos_invoice_payment":
-        return (
-          service.carlos_invoice_payment ??
-          0
-        );
+        return service.carlos_invoice_payment;
 
       case "observations":
-        return (
-          service.observations ?? ""
-        );
+        return service.observations;
 
       default:
-        return "";
+        return null;
     }
   }
 
-  // =========================================================
-  // ALINEACIÓN
-  // =========================================================
-
   function isRightAligned(
-    columnKey: string
+    key: string
   ) {
     return [
       "weight",
@@ -539,39 +615,41 @@ export default function FletesPage() {
       "invoice_freight",
       "carlos_cash_advance",
       "carlos_invoice_payment",
-    ].includes(columnKey);
+    ].includes(key);
   }
-
-  // =========================================================
-  // CAMPOS PERSONALIZADOS
-  // =========================================================
 
   function formatCustomValue(
     value: unknown,
-    type: CustomField["field_type"]
+    type:
+      CustomField["field_type"]
   ) {
     if (
       value === null ||
-      value === undefined ||
+      value ===
+        undefined ||
       value === ""
     ) {
       return "—";
     }
 
-    if (type === "boolean") {
+    if (
+      type === "boolean"
+    ) {
       return value === true ||
         value === "true"
         ? "Sí"
         : "No";
     }
 
-    if (type === "number") {
-      const numberValue =
+    if (
+      type === "number"
+    ) {
+      const number =
         Number(value);
 
       if (
         Number.isNaN(
-          numberValue
+          number
         )
       ) {
         return String(value);
@@ -579,56 +657,12 @@ export default function FletesPage() {
 
       return new Intl.NumberFormat(
         "es-MX"
-      ).format(numberValue);
+      ).format(number);
     }
 
-    if (type === "date") {
-      return formatDate(
-        String(value)
-      );
-    }
-
-    return String(value);
-  }
-
-  // =========================================================
-  // VALOR DINÁMICO PARA EXCEL
-  // =========================================================
-
-  function getExcelCustomValue(
-    value: unknown,
-    type: CustomField["field_type"]
-  ):
-    | string
-    | number
-    | boolean {
     if (
-      value === null ||
-      value === undefined ||
-      value === ""
+      type === "date"
     ) {
-      return "";
-    }
-
-    if (type === "boolean") {
-      return value === true ||
-        value === "true"
-        ? "Sí"
-        : "No";
-    }
-
-    if (type === "number") {
-      const numberValue =
-        Number(value);
-
-      return Number.isNaN(
-        numberValue
-      )
-        ? String(value)
-        : numberValue;
-    }
-
-    if (type === "date") {
       return formatDate(
         String(value)
       );
@@ -636,185 +670,171 @@ export default function FletesPage() {
 
     return String(value);
   }
-
-  // =========================================================
-  // EXPORTAR EXCEL
-  // =========================================================
-
-  function exportOfficialExcel() {
-    if (services.length === 0) {
-      setErrorMessage(
-        "No hay registros disponibles para exportar."
-      );
-
-      return;
-    }
-
-    setExportingExcel(true);
-    setErrorMessage("");
-
-    try {
-      const rows =
-        services.map(
-          (service) => {
-            const row: Record<
-              string,
-              string | number | boolean
-            > = {};
-
-            // Columnas principales visibles
-            mainColumns.forEach(
-              (column) => {
-                row[column.label] =
-                  getExcelMainValue(
-                    service,
-                    column.column_key
-                  );
-              }
-            );
-
-            // Campos personalizados visibles
-            customFields.forEach(
-              (field) => {
-                const value =
-                  service
-                    .custom_fields?.[
-                    field.field_key
-                  ];
-
-                row[field.label] =
-                  getExcelCustomValue(
-                    value,
-                    field.field_type
-                  );
-              }
-            );
-
-            return row;
-          }
-        );
-
-      const worksheet =
-        XLSX.utils.json_to_sheet(
-          rows
-        );
-
-      const workbook =
-        XLSX.utils.book_new();
-
-      XLSX.utils.book_append_sheet(
-        workbook,
-        worksheet,
-        "Fletes"
-      );
-
-      // Anchos aproximados
-      const totalColumns =
-        mainColumns.length +
-        customFields.length;
-
-      worksheet["!cols"] =
-        Array.from(
-          {
-            length:
-              totalColumns,
-          },
-          () => ({
-            wch: 20,
-          })
-        );
-
-      const today =
-        new Date()
-          .toISOString()
-          .slice(0, 10);
-
-      XLSX.writeFile(
-        workbook,
-        `control-fletes-${today}.xlsx`
-      );
-    } catch (error) {
-      const message =
-        error instanceof Error
-          ? error.message
-          : "Error desconocido.";
-
-      setErrorMessage(
-        `No se pudo generar el Excel: ${message}`
-      );
-    } finally {
-      setExportingExcel(false);
-    }
-  }
-
-  // =========================================================
-  // ELIMINAR FLETE
-  // =========================================================
 
   async function handleDelete(
     service: FreightService
   ) {
-    if (!canDelete) {
+    if (
+      !canDelete ||
+      deletingId
+    ) {
       return;
     }
 
     const folio =
       `F-${String(
         service.folio
-      ).padStart(4, "0")}`;
+      ).padStart(
+        4,
+        "0"
+      )}`;
 
     const confirmed =
       window.confirm(
-        `¿Seguro que deseas eliminar el flete ${folio}?\n\nEsta acción no se puede deshacer.`
+        `¿Seguro que deseas eliminar el flete ${folio}?\n\nEsta acción no se puede deshacer y quedará registrada en Auditoría.`
       );
 
     if (!confirmed) {
       return;
     }
 
-    setErrorMessage("");
-
-    const { error } =
-      await supabase
-        .from(
-          "freight_services"
-        )
-        .delete()
-        .eq(
-          "id",
-          service.id
-        );
-
-    if (error) {
-      setErrorMessage(
-        `No se pudo eliminar el flete: ${error.message}`
+    try {
+      setDeletingId(
+        service.id
       );
 
-      return;
-    }
+      setErrorMessage(
+        ""
+      );
 
-    setServices(
-      (current) =>
-        current.filter(
-          (item) =>
-            item.id !==
-            service.id
-        )
-    );
+      const {
+        data: {
+          session,
+        },
+      } =
+        await supabase.auth.getSession();
+
+      if (!session) {
+        router.replace(
+          "/login"
+        );
+
+        return;
+      }
+
+      const response =
+        await fetch(
+          `/api/fletes/${service.id}`,
+          {
+            method:
+              "DELETE",
+
+            headers: {
+              Authorization:
+                `Bearer ${session.access_token}`,
+            },
+          }
+        );
+
+      const data =
+        await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          data.error ??
+            "No se pudo eliminar el flete."
+        );
+      }
+
+      setServices(
+        (current) =>
+          current.filter(
+            (item) =>
+              item.id !==
+              service.id
+          )
+      );
+    } catch (error) {
+      console.error(error);
+
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : "No se pudo eliminar el flete."
+      );
+    } finally {
+      setDeletingId(
+        null
+      );
+    }
   }
 
-  // =========================================================
-  // TOTAL DE COLUMNAS
-  // =========================================================
+  function exportExcel() {
+    const rows =
+      filteredServices.map(
+        (service) => {
+          const row:
+            Record<
+              string,
+              unknown
+            > = {};
+
+          mainColumns.forEach(
+            (column) => {
+              row[column.label] =
+                rawMainValue(
+                  service,
+                  column.column_key
+                ) ?? "";
+            }
+          );
+
+          customFields.forEach(
+            (field) => {
+              row[field.label] =
+                service
+                  .custom_fields?.[
+                  field.field_key
+                ] ?? "";
+            }
+          );
+
+          return row;
+        }
+      );
+
+    const worksheet =
+      XLSX.utils.json_to_sheet(
+        rows
+      );
+
+    const workbook =
+      XLSX.utils.book_new();
+
+    XLSX.utils.book_append_sheet(
+      workbook,
+      worksheet,
+      "Fletes"
+    );
+
+    const today =
+      new Date()
+        .toISOString()
+        .slice(
+          0,
+          10
+        );
+
+    XLSX.writeFile(
+      workbook,
+      `relacion-fletes-${today}.xlsx`
+    );
+  }
 
   const totalColumns =
     mainColumns.length +
     customFields.length +
     (canEdit ? 1 : 0);
-
-  // =========================================================
-  // LOADING
-  // =========================================================
 
   if (loading) {
     return (
@@ -830,18 +850,10 @@ export default function FletesPage() {
     );
   }
 
-  // =========================================================
-  // UI
-  // =========================================================
-
   return (
     <main className="min-h-screen bg-slate-100 text-slate-900 transition-colors dark:bg-slate-950 dark:text-white">
-      {/* =====================================================
-          HEADER
-      ====================================================== */}
-
-      <header className="border-b border-slate-200 bg-white transition-colors dark:border-slate-800 dark:bg-slate-900">
-        <div className="mx-auto flex max-w-[1900px] flex-col gap-4 px-4 py-4 sm:px-6 lg:flex-row lg:items-center lg:justify-between">
+      <header className="border-b border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
+        <div className="mx-auto flex max-w-[1900px] flex-col gap-4 px-7 py-5 lg:flex-row lg:items-center lg:justify-between">
           <div>
             <button
               type="button"
@@ -855,21 +867,18 @@ export default function FletesPage() {
               ← Dashboard
             </button>
 
-            <h1 className="text-2xl font-bold text-slate-900 dark:text-white">
+            <h1 className="text-2xl font-bold">
               Relación de Fletes
             </h1>
 
             <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-              Rol: {profile?.role}
+              Rol:{" "}
+              {profile?.role}
             </p>
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
-            {/* TEMA */}
-
             <ThemeToggle />
-
-            {/* HOJA DE TRABAJO */}
 
             <button
               type="button"
@@ -878,46 +887,48 @@ export default function FletesPage() {
                   "/fletes/hoja"
                 )
               }
-              className="rounded-lg border border-blue-300 bg-blue-50 px-4 py-2.5 text-sm font-semibold text-blue-700 transition hover:bg-blue-100 dark:border-blue-900 dark:bg-blue-950/30 dark:text-blue-300 dark:hover:bg-blue-950/50"
+              className="rounded-lg border border-blue-300 bg-blue-50 px-4 py-2.5 text-sm font-semibold text-blue-700 transition hover:bg-blue-100 dark:border-blue-800 dark:bg-blue-950/30 dark:text-blue-300"
             >
-              📊 Hoja de trabajo
+              Hoja de trabajo
             </button>
-
-            {/* EXCEL */}
 
             <button
               type="button"
-              disabled={
-                exportingExcel ||
-                services.length === 0
-              }
               onClick={
-                exportOfficialExcel
+                exportExcel
               }
-              className="rounded-lg border border-emerald-300 bg-emerald-50 px-4 py-2.5 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-300 dark:hover:bg-emerald-950/50"
+              className="rounded-lg border border-emerald-300 bg-emerald-50 px-4 py-2.5 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-100 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-300"
             >
-              {exportingExcel
-                ? "Generando..."
-                : "↓ Excel"}
+              Excel
             </button>
 
-            {/* CONFIGURACIÓN DE CAMPOS */}
-
             {isSuperuser && (
-              <button
-                type="button"
-                onClick={() =>
-                  router.push(
-                    "/fletes/campos"
-                  )
-                }
-                className="rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:hover:bg-slate-800"
-              >
-                ⚙ Campos
-              </button>
-            )}
+              <>
+                <button
+                  type="button"
+                  onClick={() =>
+                    router.push(
+                      "/fletes/campos"
+                    )
+                  }
+                  className="rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:hover:bg-slate-800"
+                >
+                  Campos
+                </button>
 
-            {/* NUEVO FLETE */}
+                <button
+                  type="button"
+                  onClick={() =>
+                    router.push(
+                      "/admin/usuarios"
+                    )
+                  }
+                  className="rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:hover:bg-slate-800"
+                >
+                  Usuarios
+                </button>
+              </>
+            )}
 
             {canEdit && (
               <button
@@ -936,29 +947,19 @@ export default function FletesPage() {
         </div>
       </header>
 
-      {/* =====================================================
-          CONTENIDO
-      ====================================================== */}
-
-      <section className="mx-auto max-w-[1900px] p-4 sm:p-6">
-        {/* =================================================
-            BUSCADOR
-        ================================================== */}
-
+      <section className="mx-auto max-w-[1900px] p-7">
         <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="w-full sm:max-w-lg">
-            <input
-              type="search"
-              value={search}
-              onChange={(event) =>
-                setSearch(
-                  event.target.value
-                )
-              }
-              placeholder="Buscar cliente, factura, contenedor, destino..."
-              className="w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-slate-500 focus:ring-2 focus:ring-slate-200 dark:border-slate-700 dark:bg-slate-900 dark:text-white dark:placeholder:text-slate-500 dark:focus:border-slate-500 dark:focus:ring-slate-800"
-            />
-          </div>
+          <input
+            type="search"
+            value={search}
+            onChange={(event) =>
+              setSearch(
+                event.target.value
+              )
+            }
+            placeholder="Buscar cliente, factura, contenedor, destino..."
+            className="w-full max-w-lg rounded-lg border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+          />
 
           <p className="text-sm text-slate-500 dark:text-slate-400">
             {
@@ -971,23 +972,19 @@ export default function FletesPage() {
           </p>
         </div>
 
-        {/* =================================================
-            AVISO DE EXCEL / HOJA DE TRABAJO
-        ================================================== */}
-
-        <div className="mb-4 flex flex-col gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300 sm:flex-row sm:items-center sm:justify-between">
+        <div className="mb-4 flex items-center justify-between rounded-xl border border-slate-200 bg-white px-5 py-3 text-sm text-slate-600 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300">
           <span>
-            📊 La hoja de trabajo permite cálculos personales sin modificar los datos oficiales.
+            La hoja de trabajo
+            permite cálculos
+            personales sin modificar
+            los datos oficiales.
           </span>
 
           <span className="text-xs text-slate-400">
-            ↓ Excel exporta únicamente una copia de consulta.
+            Excel exporta únicamente
+            una copia de consulta.
           </span>
         </div>
-
-        {/* =================================================
-            ERROR
-        ================================================== */}
 
         {errorMessage && (
           <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-5 py-4 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300">
@@ -995,21 +992,11 @@ export default function FletesPage() {
           </div>
         )}
 
-        {/* =================================================
-            TABLA
-        ================================================== */}
-
-        <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm transition-colors dark:border-slate-800 dark:bg-slate-900">
+        <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
           <div className="overflow-x-auto">
             <table className="w-full min-w-max border-collapse text-sm">
-              {/* =============================================
-                  ENCABEZADOS
-              ============================================== */}
-
               <thead className="sticky top-0 z-10 bg-slate-900 text-white dark:bg-black">
                 <tr>
-                  {/* COLUMNAS PRINCIPALES */}
-
                   {mainColumns.map(
                     (column) => (
                       <TableHeader
@@ -1031,8 +1018,6 @@ export default function FletesPage() {
                     )
                   )}
 
-                  {/* CAMPOS PERSONALIZADOS */}
-
                   {customFields.map(
                     (field) => (
                       <TableHeader
@@ -1053,8 +1038,6 @@ export default function FletesPage() {
                     )
                   )}
 
-                  {/* ACCIONES */}
-
                   {canEdit && (
                     <th className="whitespace-nowrap px-4 py-3 text-center font-semibold">
                       Acciones
@@ -1063,21 +1046,15 @@ export default function FletesPage() {
                 </tr>
               </thead>
 
-              {/* =============================================
-                  CUERPO
-              ============================================== */}
-
               <tbody>
                 {filteredServices.length ===
                 0 ? (
                   <tr>
                     <td
-                      colSpan={
-                        Math.max(
-                          totalColumns,
-                          1
-                        )
-                      }
+                      colSpan={Math.max(
+                        totalColumns,
+                        1
+                      )}
                       className="px-6 py-20 text-center text-slate-500 dark:text-slate-400"
                     >
                       {search
@@ -1094,12 +1071,8 @@ export default function FletesPage() {
                         }
                         className="border-t border-slate-200 transition hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-800/60"
                       >
-                        {/* COLUMNAS PRINCIPALES */}
-
                         {mainColumns.map(
-                          (
-                            column
-                          ) => (
+                          (column) => (
                             <TableCell
                               key={
                                 column.id
@@ -1124,39 +1097,30 @@ export default function FletesPage() {
                           )
                         )}
 
-                        {/* CAMPOS PERSONALIZADOS */}
-
                         {customFields.map(
-                          (field) => {
-                            const value =
-                              service
-                                .custom_fields?.[
-                                field
-                                  .field_key
-                              ];
-
-                            return (
-                              <TableCell
-                                key={
-                                  field.id
-                                }
-                                align={
-                                  field.field_type ===
-                                  "number"
-                                    ? "right"
-                                    : "left"
-                                }
-                              >
-                                {formatCustomValue(
-                                  value,
-                                  field.field_type
-                                )}
-                              </TableCell>
-                            );
-                          }
+                          (field) => (
+                            <TableCell
+                              key={
+                                field.id
+                              }
+                              align={
+                                field.field_type ===
+                                "number"
+                                  ? "right"
+                                  : "left"
+                              }
+                            >
+                              {formatCustomValue(
+                                service
+                                  .custom_fields?.[
+                                  field
+                                    .field_key
+                                ],
+                                field.field_type
+                              )}
+                            </TableCell>
+                          )
                         )}
-
-                        {/* ACCIONES */}
 
                         {canEdit && (
                           <td className="whitespace-nowrap px-3 py-3 text-center">
@@ -1176,14 +1140,21 @@ export default function FletesPage() {
                               {canDelete && (
                                 <button
                                   type="button"
+                                  disabled={
+                                    deletingId ===
+                                    service.id
+                                  }
                                   onClick={() =>
-                                    handleDelete(
+                                    void handleDelete(
                                       service
                                     )
                                   }
-                                  className="rounded-md border border-red-200 bg-white px-3 py-1.5 text-xs font-medium text-red-600 transition hover:bg-red-50 dark:border-red-900 dark:bg-slate-900 dark:text-red-400 dark:hover:bg-red-950/30"
+                                  className="rounded-md border border-red-200 bg-white px-3 py-1.5 text-xs font-medium text-red-600 transition hover:bg-red-50 disabled:opacity-50 dark:border-red-900 dark:bg-slate-900 dark:text-red-400 dark:hover:bg-red-950/30"
                                 >
-                                  Eliminar
+                                  {deletingId ===
+                                  service.id
+                                    ? "Eliminando..."
+                                    : "Eliminar"}
                                 </button>
                               )}
                             </div>
@@ -1202,15 +1173,12 @@ export default function FletesPage() {
   );
 }
 
-// ===========================================================
-// ENCABEZADO DE TABLA
-// ===========================================================
-
 function TableHeader({
   children,
   align = "left",
 }: {
-  children: React.ReactNode;
+  children:
+    React.ReactNode;
 
   align?:
     | "left"
@@ -1241,16 +1209,13 @@ function TableHeader({
   );
 }
 
-// ===========================================================
-// CELDA DE TABLA
-// ===========================================================
-
 function TableCell({
   children,
   align = "left",
   bold = false,
 }: {
-  children: React.ReactNode;
+  children:
+    React.ReactNode;
 
   align?:
     | "left"
