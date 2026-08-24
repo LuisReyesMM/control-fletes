@@ -304,15 +304,12 @@ export default function AuditoriaPage() {
         }
 
         setProfile(profileData);
-
-        await loadAudit();
       } catch (error) {
         console.error(error);
       } finally {
         setLoading(false);
       }
     }, [
-      loadAudit,
       router,
       supabase,
     ]);
@@ -320,6 +317,22 @@ export default function AuditoriaPage() {
   useEffect(() => {
     void initialize();
   }, [initialize]);
+
+  useEffect(() => {
+    if (!profile) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      void loadAudit().catch((error) => {
+        console.error(error);
+      });
+    }, 250);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [profile, loadAudit]);
 
   function clearFilters() {
     setSearch("");

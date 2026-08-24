@@ -18,19 +18,15 @@ type FreightPayload = {
   invoice?: string | null;
   client?: string | null;
   service_type?: string | null;
+  category?: string | null;
   container?: string | null;
-
   weight?: number | null;
-
   destination?: string | null;
-
   rodrigo_cash_freight?: number | null;
   invoice_freight?: number | null;
   carlos_cash_advance?: number | null;
   carlos_invoice_payment?: number | null;
-
   observations?: string | null;
-
   custom_fields?: Record<string, unknown>;
 };
 
@@ -84,7 +80,11 @@ function getRequestIp(
 }
 
 function formatFolio(
-  folio: number | string | null | undefined
+  folio:
+    | number
+    | string
+    | null
+    | undefined
 ) {
   if (
     folio === null ||
@@ -131,9 +131,7 @@ function cleanNumber(
     Number(value);
 
   if (
-    !Number.isFinite(
-      number
-    )
+    !Number.isFinite(number)
   ) {
     return null;
   }
@@ -141,7 +139,7 @@ function cleanNumber(
   return number;
 }
 
-async function requireEditor(
+async function authenticateUser(
   request: NextRequest
 ) {
   const authorization =
@@ -192,11 +190,8 @@ async function requireEditor(
     getAdminClient();
 
   const {
-    data: {
-      user,
-    },
-    error:
-      authError,
+    data: { user },
+    error: authError,
   } =
     await admin.auth.getUser(
       accessToken
@@ -221,10 +216,8 @@ async function requireEditor(
   }
 
   const {
-    data:
-      profile,
-    error:
-      profileError,
+    data: profile,
+    error: profileError,
   } = await admin
     .from("profiles")
     .select(
@@ -247,26 +240,6 @@ async function requireEditor(
           {
             error:
               "Tu cuenta no tiene acceso al sistema.",
-          },
-          {
-            status: 403,
-          }
-        ),
-    };
-  }
-
-  if (
-    profile.role !==
-      "editor" &&
-    profile.role !==
-      "superuser"
-  ) {
-    return {
-      error:
-        NextResponse.json(
-          {
-            error:
-              "No tienes permisos para crear fletes.",
           },
           {
             status: 403,
@@ -298,9 +271,10 @@ async function writeAuditLog({
 }: {
   request: NextRequest;
 
-  admin: ReturnType<
-    typeof getAdminClient
-  >;
+  admin:
+    ReturnType<
+      typeof getAdminClient
+    >;
 
   actorId: string;
 
@@ -328,17 +302,16 @@ async function writeAuditLog({
 
   newData?: unknown;
 
-  metadata?: Record<
-    string,
-    unknown
-  >;
+  metadata?:
+    Record<
+      string,
+      unknown
+    >;
 }) {
   const {
     error,
   } = await admin
-    .from(
-      "audit_log"
-    )
+    .from("audit_log")
     .insert({
       actor_id:
         actorId,
@@ -401,8 +374,7 @@ async function writeAuditLog({
 
 // ============================================================
 // POST /api/fletes
-// Crear un nuevo flete.
-// editor / superuser
+// EDITOR / SUPERUSER
 // ============================================================
 
 export async function POST(
@@ -410,7 +382,7 @@ export async function POST(
 ) {
   try {
     const auth =
-      await requireEditor(
+      await authenticateUser(
         request
       );
 
@@ -426,12 +398,25 @@ export async function POST(
       profile,
     } = auth;
 
+    if (
+      profile.role !==
+        "editor" &&
+      profile.role !==
+        "superuser"
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            "No tienes permisos para crear fletes.",
+        },
+        {
+          status: 403,
+        }
+      );
+    }
+
     const body =
       (await request.json()) as FreightPayload;
-
-    // ========================================================
-    // VALIDACIONES
-    // ========================================================
 
     const serviceDate =
       cleanText(
@@ -484,6 +469,11 @@ export async function POST(
           body.service_type
         ),
 
+      category:
+        cleanText(
+          body.category
+        ),
+
       container:
         cleanText(
           body.container
@@ -502,22 +492,22 @@ export async function POST(
       rodrigo_cash_freight:
         cleanNumber(
           body.rodrigo_cash_freight
-        ),
+        ) ?? 0,
 
       invoice_freight:
         cleanNumber(
           body.invoice_freight
-        ),
+        ) ?? 0,
 
       carlos_cash_advance:
         cleanNumber(
           body.carlos_cash_advance
-        ),
+        ) ?? 0,
 
       carlos_invoice_payment:
         cleanNumber(
           body.carlos_invoice_payment
-        ),
+        ) ?? 0,
 
       observations:
         cleanText(
@@ -533,10 +523,6 @@ export async function POST(
       updated_by:
         user.id,
     };
-
-    // ========================================================
-    // CREAR FLETE
-    // ========================================================
 
     const {
       data:
@@ -573,10 +559,6 @@ export async function POST(
         }
       );
     }
-
-    // ========================================================
-    // AUDITORÍA
-    // ========================================================
 
     try {
       await writeAuditLog({
@@ -628,8 +610,6 @@ export async function POST(
         auditError
       );
 
-      // Si la auditoría falla,
-      // intentamos revertir la creación.
       const {
         error:
           rollbackError,

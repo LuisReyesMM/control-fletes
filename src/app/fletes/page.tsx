@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  ReactNode,
   useEffect,
   useMemo,
   useState,
@@ -10,8 +11,8 @@ import { useRouter } from "next/navigation";
 
 import * as XLSX from "xlsx";
 
-import { createClient } from "@/lib/supabase/client";
 import ThemeToggle from "@/components/theme-toggle";
+import { createClient } from "@/lib/supabase/client";
 
 type Role =
   | "reader"
@@ -48,33 +49,53 @@ type CustomField = {
 type FreightService = {
   id: string;
   folio: number;
+
   service_date: string;
-  unit: string | null;
-  invoice: string | null;
-  client: string | null;
-  service_type: string | null;
-  container: string | null;
-  weight: number | null;
-  destination: string | null;
+
+  unit:
+    string | null;
+
+  invoice:
+    string | null;
+
+  client:
+    string | null;
+
+  service_type:
+    string | null;
+
+  category:
+    string | null;
+
+  container:
+    string | null;
+
+  weight:
+    number | null;
+
+  destination:
+    string | null;
+
   rodrigo_cash_freight:
-    | number
-    | null;
+    number | null;
+
   invoice_freight:
-    | number
-    | null;
+    number | null;
+
   carlos_cash_advance:
-    | number
-    | null;
+    number | null;
+
   carlos_invoice_payment:
-    | number
-    | null;
-  observations: string | null;
+    number | null;
+
+  observations:
+    string | null;
+
   custom_fields:
-    | Record<
-        string,
-        unknown
-      >
-    | null;
+    Record<
+      string,
+      unknown
+    > | null;
 };
 
 export default function FletesPage() {
@@ -145,6 +166,10 @@ export default function FletesPage() {
       null
     );
 
+  // ============================================================
+  // CARGAR DATOS
+  // ============================================================
+
   useEffect(() => {
     let mounted = true;
 
@@ -153,9 +178,16 @@ export default function FletesPage() {
         setLoading(true);
         setErrorMessage("");
 
+        // ======================================================
+        // USUARIO
+        // ======================================================
+
         const {
-          data: { user },
-          error: userError,
+          data: {
+            user,
+          },
+          error:
+            userError,
         } =
           await supabase.auth.getUser();
 
@@ -170,21 +202,31 @@ export default function FletesPage() {
           return;
         }
 
+        // ======================================================
+        // PERFIL
+        // ======================================================
+
         const {
           data:
             profileData,
           error:
             profileError,
-        } = await supabase
-          .from("profiles")
-          .select(
-            "role, active"
-          )
-          .eq(
-            "id",
-            user.id
-          )
-          .single();
+        } =
+          await supabase
+            .from(
+              "profiles"
+            )
+            .select(
+              `
+              role,
+              active
+              `
+            )
+            .eq(
+              "id",
+              user.id
+            )
+            .single();
 
         if (
           profileError ||
@@ -200,12 +242,18 @@ export default function FletesPage() {
           return;
         }
 
+        // ======================================================
+        // CARGA PARALELA
+        // ======================================================
+
         const [
           mainResult,
           customResult,
           freightResult,
         ] =
           await Promise.all([
+            // COLUMNAS FIJAS
+
             supabase
               .from(
                 "freight_column_settings"
@@ -230,6 +278,8 @@ export default function FletesPage() {
                     true,
                 }
               ),
+
+            // CAMPOS PERSONALIZADOS
 
             supabase
               .from(
@@ -264,6 +314,8 @@ export default function FletesPage() {
                     true,
                 }
               ),
+
+            // FLETES
 
             supabase
               .from(
@@ -327,16 +379,21 @@ export default function FletesPage() {
             []) as FreightService[]
         );
       } catch (error) {
-        console.error(error);
+        console.error(
+          error
+        );
 
         setErrorMessage(
-          error instanceof Error
+          error instanceof
+          Error
             ? error.message
             : "No se pudieron cargar los fletes."
         );
       } finally {
         if (mounted) {
-          setLoading(false);
+          setLoading(
+            false
+          );
         }
       }
     }
@@ -346,7 +403,14 @@ export default function FletesPage() {
     return () => {
       mounted = false;
     };
-  }, [router, supabase]);
+  }, [
+    router,
+    supabase,
+  ]);
+
+  // ============================================================
+  // PERMISOS
+  // ============================================================
 
   const canEdit =
     profile?.role ===
@@ -361,6 +425,10 @@ export default function FletesPage() {
   const isSuperuser =
     profile?.role ===
     "superuser";
+
+  // ============================================================
+  // BÚSQUEDA
+  // ============================================================
 
   const filteredServices =
     useMemo(() => {
@@ -377,41 +445,66 @@ export default function FletesPage() {
         (service) => {
           const values = [
             service.folio,
+
             service.service_date,
+
             service.unit,
+
             service.invoice,
+
             service.client,
+
             service.service_type,
+
+            service.category,
+
             service.container,
+
             service.weight,
+
             service.destination,
+
             service.rodrigo_cash_freight,
+
             service.invoice_freight,
+
             service.carlos_cash_advance,
+
             service.carlos_invoice_payment,
+
             service.observations,
+
             ...Object.values(
               service.custom_fields ??
                 {}
             ),
           ];
 
-          return values
-            .filter(
-              (value) =>
-                value !== null &&
-                value !==
-                  undefined
-            )
-            .join(" ")
-            .toLowerCase()
-            .includes(term);
+          const text =
+            values
+              .filter(
+                (value) =>
+                  value !==
+                    null &&
+                  value !==
+                    undefined
+              )
+              .join(" ")
+              .toLowerCase();
+
+          return text.includes(
+            term
+          );
         }
       );
     }, [
       search,
       services,
     ]);
+
+  // ============================================================
+  // MONEDA
+  // ============================================================
 
   function formatMoney(
     value:
@@ -422,8 +515,12 @@ export default function FletesPage() {
     return new Intl.NumberFormat(
       "es-MX",
       {
-        style: "currency",
-        currency: "MXN",
+        style:
+          "currency",
+
+        currency:
+          "MXN",
+
         minimumFractionDigits:
           2,
       }
@@ -432,10 +529,15 @@ export default function FletesPage() {
     );
   }
 
+  // ============================================================
+  // FECHA
+  // ============================================================
+
   function formatDate(
     value:
       | string
       | null
+      | undefined
   ) {
     if (!value) {
       return "—";
@@ -459,11 +561,19 @@ export default function FletesPage() {
     return `${day}/${month}/${year}`;
   }
 
+  // ============================================================
+  // MOSTRAR COLUMNA FIJA
+  // ============================================================
+
   function renderMainColumn(
-    service: FreightService,
-    key: string
-  ) {
-    switch (key) {
+    service:
+      FreightService,
+    columnKey:
+      string
+  ): ReactNode {
+    switch (
+      columnKey
+    ) {
       case "folio":
         return `F-${String(
           service.folio
@@ -479,7 +589,8 @@ export default function FletesPage() {
 
       case "unit":
         return (
-          service.unit ?? "—"
+          service.unit ??
+          "—"
         );
 
       case "invoice":
@@ -497,6 +608,12 @@ export default function FletesPage() {
       case "service_type":
         return (
           service.service_type ??
+          "—"
+        );
+
+      case "category":
+        return (
+          service.category ??
           "—"
         );
 
@@ -549,11 +666,19 @@ export default function FletesPage() {
     }
   }
 
+  // ============================================================
+  // VALOR CRUDO PARA EXCEL
+  // ============================================================
+
   function rawMainValue(
-    service: FreightService,
-    key: string
+    service:
+      FreightService,
+    columnKey:
+      string
   ): unknown {
-    switch (key) {
+    switch (
+      columnKey
+    ) {
       case "folio":
         return `F-${String(
           service.folio
@@ -576,6 +701,9 @@ export default function FletesPage() {
 
       case "service_type":
         return service.service_type;
+
+      case "category":
+        return service.category;
 
       case "container":
         return service.container;
@@ -606,8 +734,13 @@ export default function FletesPage() {
     }
   }
 
+  // ============================================================
+  // ALINEACIÓN
+  // ============================================================
+
   function isRightAligned(
-    key: string
+    columnKey:
+      string
   ) {
     return [
       "weight",
@@ -615,11 +748,18 @@ export default function FletesPage() {
       "invoice_freight",
       "carlos_cash_advance",
       "carlos_invoice_payment",
-    ].includes(key);
+    ].includes(
+      columnKey
+    );
   }
 
+  // ============================================================
+  // CAMPO PERSONALIZADO
+  // ============================================================
+
   function formatCustomValue(
-    value: unknown,
+    value:
+      unknown,
     type:
       CustomField["field_type"]
   ) {
@@ -633,46 +773,66 @@ export default function FletesPage() {
     }
 
     if (
-      type === "boolean"
+      type ===
+      "boolean"
     ) {
-      return value === true ||
-        value === "true"
+      return value ===
+        true ||
+        value ===
+          "true"
         ? "Sí"
         : "No";
     }
 
     if (
-      type === "number"
+      type ===
+      "number"
     ) {
       const number =
-        Number(value);
+        Number(
+          value
+        );
 
       if (
         Number.isNaN(
           number
         )
       ) {
-        return String(value);
+        return String(
+          value
+        );
       }
 
       return new Intl.NumberFormat(
         "es-MX"
-      ).format(number);
-    }
-
-    if (
-      type === "date"
-    ) {
-      return formatDate(
-        String(value)
+      ).format(
+        number
       );
     }
 
-    return String(value);
+    if (
+      type ===
+      "date"
+    ) {
+      return formatDate(
+        String(
+          value
+        )
+      );
+    }
+
+    return String(
+      value
+    );
   }
 
+  // ============================================================
+  // ELIMINAR
+  // ============================================================
+
   async function handleDelete(
-    service: FreightService
+    service:
+      FreightService
   ) {
     if (
       !canDelete ||
@@ -694,7 +854,9 @@ export default function FletesPage() {
         `¿Seguro que deseas eliminar el flete ${folio}?\n\nEsta acción no se puede deshacer y quedará registrada en Auditoría.`
       );
 
-    if (!confirmed) {
+    if (
+      !confirmed
+    ) {
       return;
     }
 
@@ -714,7 +876,9 @@ export default function FletesPage() {
       } =
         await supabase.auth.getSession();
 
-      if (!session) {
+      if (
+        !session
+      ) {
         router.replace(
           "/login"
         );
@@ -739,7 +903,9 @@ export default function FletesPage() {
       const data =
         await response.json();
 
-      if (!response.ok) {
+      if (
+        !response.ok
+      ) {
         throw new Error(
           data.error ??
             "No se pudo eliminar el flete."
@@ -755,10 +921,13 @@ export default function FletesPage() {
           )
       );
     } catch (error) {
-      console.error(error);
+      console.error(
+        error
+      );
 
       setErrorMessage(
-        error instanceof Error
+        error instanceof
+          Error
           ? error.message
           : "No se pudo eliminar el flete."
       );
@@ -768,6 +937,10 @@ export default function FletesPage() {
       );
     }
   }
+
+  // ============================================================
+  // EXPORTAR EXCEL
+  // ============================================================
 
   function exportExcel() {
     const rows =
@@ -779,9 +952,13 @@ export default function FletesPage() {
               unknown
             > = {};
 
+          // COLUMNAS FIJAS
+
           mainColumns.forEach(
             (column) => {
-              row[column.label] =
+              row[
+                column.label
+              ] =
                 rawMainValue(
                   service,
                   column.column_key
@@ -789,9 +966,13 @@ export default function FletesPage() {
             }
           );
 
+          // COLUMNAS PERSONALIZADAS
+
           customFields.forEach(
             (field) => {
-              row[field.label] =
+              row[
+                field.label
+              ] =
                 service
                   .custom_fields?.[
                   field.field_key
@@ -831,10 +1012,20 @@ export default function FletesPage() {
     );
   }
 
+  // ============================================================
+  // TOTAL COLUMNAS
+  // ============================================================
+
   const totalColumns =
     mainColumns.length +
     customFields.length +
-    (canEdit ? 1 : 0);
+    (canEdit
+      ? 1
+      : 0);
+
+  // ============================================================
+  // LOADING
+  // ============================================================
 
   if (loading) {
     return (
@@ -850,10 +1041,18 @@ export default function FletesPage() {
     );
   }
 
+  // ============================================================
+  // UI
+  // ============================================================
+
   return (
     <main className="min-h-screen bg-slate-100 text-slate-900 transition-colors dark:bg-slate-950 dark:text-white">
+      {/* =======================================================
+          HEADER
+      ======================================================== */}
+
       <header className="border-b border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
-        <div className="mx-auto flex max-w-[1900px] flex-col gap-4 px-7 py-5 lg:flex-row lg:items-center lg:justify-between">
+        <div className="mx-auto flex max-w-[1900px] flex-col gap-4 px-4 py-4 sm:px-6 lg:flex-row lg:items-center lg:justify-between">
           <div>
             <button
               type="button"
@@ -867,7 +1066,7 @@ export default function FletesPage() {
               ← Dashboard
             </button>
 
-            <h1 className="text-2xl font-bold">
+            <h1 className="text-2xl font-bold text-slate-900 dark:text-white">
               Relación de Fletes
             </h1>
 
@@ -878,7 +1077,11 @@ export default function FletesPage() {
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
+            {/* TEMA */}
+
             <ThemeToggle />
+
+            {/* HOJA */}
 
             <button
               type="button"
@@ -892,6 +1095,8 @@ export default function FletesPage() {
               Hoja de trabajo
             </button>
 
+            {/* EXCEL */}
+
             <button
               type="button"
               onClick={
@@ -901,6 +1106,8 @@ export default function FletesPage() {
             >
               Excel
             </button>
+
+            {/* SUPERUSER */}
 
             {isSuperuser && (
               <>
@@ -930,6 +1137,8 @@ export default function FletesPage() {
               </>
             )}
 
+            {/* NUEVO */}
+
             {canEdit && (
               <button
                 type="button"
@@ -947,19 +1156,31 @@ export default function FletesPage() {
         </div>
       </header>
 
-      <section className="mx-auto max-w-[1900px] p-7">
+      {/* =======================================================
+          CONTENIDO
+      ======================================================== */}
+
+      <section className="mx-auto max-w-[1900px] p-4 sm:p-6">
+        {/* =====================================================
+            BUSCADOR
+        ====================================================== */}
+
         <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <input
-            type="search"
-            value={search}
-            onChange={(event) =>
-              setSearch(
-                event.target.value
-              )
-            }
-            placeholder="Buscar cliente, factura, contenedor, destino..."
-            className="w-full max-w-lg rounded-lg border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
-          />
+          <div className="w-full sm:max-w-lg">
+            <input
+              type="search"
+              value={
+                search
+              }
+              onChange={(event) =>
+                setSearch(
+                  event.target.value
+                )
+              }
+              placeholder="Buscar cliente, factura, categoría, contenedor, destino..."
+              className="w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-slate-500 focus:ring-2 focus:ring-slate-200 dark:border-slate-700 dark:bg-slate-900 dark:text-white dark:placeholder:text-slate-500 dark:focus:ring-slate-800"
+            />
+          </div>
 
           <p className="text-sm text-slate-500 dark:text-slate-400">
             {
@@ -972,7 +1193,11 @@ export default function FletesPage() {
           </p>
         </div>
 
-        <div className="mb-4 flex items-center justify-between rounded-xl border border-slate-200 bg-white px-5 py-3 text-sm text-slate-600 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300">
+        {/* =====================================================
+            INFORMACIÓN
+        ====================================================== */}
+
+        <div className="mb-4 flex flex-col gap-2 rounded-xl border border-slate-200 bg-white px-5 py-3 text-sm text-slate-600 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300 sm:flex-row sm:items-center sm:justify-between">
           <span>
             La hoja de trabajo
             permite cálculos
@@ -986,17 +1211,27 @@ export default function FletesPage() {
           </span>
         </div>
 
+        {/* =====================================================
+            ERROR
+        ====================================================== */}
+
         {errorMessage && (
           <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-5 py-4 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300">
             {errorMessage}
           </div>
         )}
 
+        {/* =====================================================
+            TABLA
+        ====================================================== */}
+
         <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
           <div className="overflow-x-auto">
             <table className="w-full min-w-max border-collapse text-sm">
               <thead className="sticky top-0 z-10 bg-slate-900 text-white dark:bg-black">
                 <tr>
+                  {/* COLUMNAS PRINCIPALES */}
+
                   {mainColumns.map(
                     (column) => (
                       <TableHeader
@@ -1018,6 +1253,8 @@ export default function FletesPage() {
                     )
                   )}
 
+                  {/* CAMPOS PERSONALIZADOS */}
+
                   {customFields.map(
                     (field) => (
                       <TableHeader
@@ -1038,6 +1275,8 @@ export default function FletesPage() {
                     )
                   )}
 
+                  {/* ACCIONES */}
+
                   {canEdit && (
                     <th className="whitespace-nowrap px-4 py-3 text-center font-semibold">
                       Acciones
@@ -1051,10 +1290,12 @@ export default function FletesPage() {
                 0 ? (
                   <tr>
                     <td
-                      colSpan={Math.max(
-                        totalColumns,
-                        1
-                      )}
+                      colSpan={
+                        Math.max(
+                          totalColumns,
+                          1
+                        )
+                      }
                       className="px-6 py-20 text-center text-slate-500 dark:text-slate-400"
                     >
                       {search
@@ -1071,6 +1312,8 @@ export default function FletesPage() {
                         }
                         className="border-t border-slate-200 transition hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-800/60"
                       >
+                        {/* COLUMNAS PRINCIPALES */}
+
                         {mainColumns.map(
                           (column) => (
                             <TableCell
@@ -1097,30 +1340,39 @@ export default function FletesPage() {
                           )
                         )}
 
+                        {/* CAMPOS PERSONALIZADOS */}
+
                         {customFields.map(
-                          (field) => (
-                            <TableCell
-                              key={
-                                field.id
-                              }
-                              align={
-                                field.field_type ===
-                                "number"
-                                  ? "right"
-                                  : "left"
-                              }
-                            >
-                              {formatCustomValue(
-                                service
-                                  .custom_fields?.[
-                                  field
-                                    .field_key
-                                ],
-                                field.field_type
-                              )}
-                            </TableCell>
-                          )
+                          (field) => {
+                            const value =
+                              service
+                                .custom_fields?.[
+                                field
+                                  .field_key
+                              ];
+
+                            return (
+                              <TableCell
+                                key={
+                                  field.id
+                                }
+                                align={
+                                  field.field_type ===
+                                  "number"
+                                    ? "right"
+                                    : "left"
+                                }
+                              >
+                                {formatCustomValue(
+                                  value,
+                                  field.field_type
+                                )}
+                              </TableCell>
+                            );
+                          }
                         )}
+
+                        {/* ACCIONES */}
 
                         {canEdit && (
                           <td className="whitespace-nowrap px-3 py-3 text-center">
@@ -1149,7 +1401,7 @@ export default function FletesPage() {
                                       service
                                     )
                                   }
-                                  className="rounded-md border border-red-200 bg-white px-3 py-1.5 text-xs font-medium text-red-600 transition hover:bg-red-50 disabled:opacity-50 dark:border-red-900 dark:bg-slate-900 dark:text-red-400 dark:hover:bg-red-950/30"
+                                  className="rounded-md border border-red-200 bg-white px-3 py-1.5 text-xs font-medium text-red-600 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-red-900 dark:bg-slate-900 dark:text-red-400 dark:hover:bg-red-950/30"
                                 >
                                   {deletingId ===
                                   service.id
@@ -1173,12 +1425,16 @@ export default function FletesPage() {
   );
 }
 
+// ============================================================
+// ENCABEZADO
+// ============================================================
+
 function TableHeader({
   children,
   align = "left",
 }: {
   children:
-    React.ReactNode;
+    ReactNode;
 
   align?:
     | "left"
@@ -1188,7 +1444,8 @@ function TableHeader({
   const alignment =
     align === "right"
       ? "text-right"
-      : align === "center"
+      : align ===
+          "center"
         ? "text-center"
         : "text-left";
 
@@ -1209,25 +1466,31 @@ function TableHeader({
   );
 }
 
+// ============================================================
+// CELDA
+// ============================================================
+
 function TableCell({
   children,
   align = "left",
   bold = false,
 }: {
   children:
-    React.ReactNode;
+    ReactNode;
 
   align?:
     | "left"
     | "right"
     | "center";
 
-  bold?: boolean;
+  bold?:
+    boolean;
 }) {
   const alignment =
     align === "right"
       ? "text-right"
-      : align === "center"
+      : align ===
+          "center"
         ? "text-center"
         : "text-left";
 

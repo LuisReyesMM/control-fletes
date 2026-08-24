@@ -2,6 +2,7 @@
 
 import {
   FormEvent,
+  ReactNode,
   useEffect,
   useMemo,
   useState,
@@ -37,12 +38,29 @@ type CustomField = {
   sort_order: number;
 };
 
+type CatalogType =
+  | "UNIT"
+  | "CLIENT"
+  | "SERVICE_TYPE"
+  | "CATEGORY"
+  | "DESTINATION";
+
+type CatalogOption = {
+  id: string;
+  catalog_type: CatalogType;
+  value: string;
+  label: string;
+  active: boolean;
+  sort_order: number;
+};
+
 type FormState = {
   service_date: string;
   unit: string;
   invoice: string;
   client: string;
   service_type: string;
+  category: string;
   container: string;
   weight: string;
   destination: string;
@@ -53,18 +71,17 @@ type FormState = {
   observations: string;
 };
 
-type ToastState = {
-  folio: string;
-} | null;
-
 const initialForm: FormState = {
   service_date:
-    new Date().toISOString().slice(0, 10),
+    new Date()
+      .toISOString()
+      .slice(0, 10),
 
   unit: "",
   invoice: "",
   client: "",
   service_type: "",
+  category: "",
   container: "",
   weight: "",
   destination: "",
@@ -75,62 +92,113 @@ const initialForm: FormState = {
   observations: "",
 };
 
-function optionalNumber(value: string) {
-  if (value.trim() === "") {
+function optionalNumber(
+  value: string
+): number | null {
+  if (
+    value.trim() === ""
+  ) {
     return null;
   }
 
-  const parsed = Number(value);
+  const parsed =
+    Number(value);
 
-  return Number.isFinite(parsed)
+  return Number.isFinite(
+    parsed
+  )
     ? parsed
     : null;
 }
 
 export default function NuevoFletePage() {
-  const router = useRouter();
+  const router =
+    useRouter();
 
-  const supabase = useMemo(
-    () => createClient(),
-    []
-  );
+  const supabase =
+    useMemo(
+      () => createClient(),
+      []
+    );
 
-  const [profile, setProfile] =
-    useState<Profile | null>(null);
+  const [
+    profile,
+    setProfile,
+  ] =
+    useState<Profile | null>(
+      null
+    );
 
-  const [form, setForm] =
-    useState<FormState>(initialForm);
+  const [
+    form,
+    setForm,
+  ] =
+    useState<FormState>(
+      initialForm
+    );
 
   const [
     customFields,
     setCustomFields,
-  ] = useState<CustomField[]>([]);
+  ] =
+    useState<CustomField[]>(
+      []
+    );
 
   const [
     customValues,
     setCustomValues,
-  ] = useState<
-    Record<string, string | boolean>
-  >({});
+  ] =
+    useState<
+      Record<
+        string,
+        string | boolean
+      >
+    >({});
 
-  const [loading, setLoading] =
+  const [
+    catalogOptions,
+    setCatalogOptions,
+  ] =
+    useState<CatalogOption[]>(
+      []
+    );
+
+  const [
+    loading,
+    setLoading,
+  ] =
     useState(true);
 
-  const [saving, setSaving] =
+  const [
+    saving,
+    setSaving,
+  ] =
     useState(false);
 
   const [
     confirmOpen,
     setConfirmOpen,
-  ] = useState(false);
+  ] =
+    useState(false);
 
   const [
     errorMessage,
     setErrorMessage,
-  ] = useState("");
+  ] =
+    useState("");
 
-  const [toast, setToast] =
-    useState<ToastState>(null);
+  const [
+    successFolio,
+    setSuccessFolio,
+  ] =
+    useState<string | null>(
+      null
+    );
+
+  // ============================================================
+  // CARGAR INFORMACIÓN
+  // ============================================================
 
   useEffect(() => {
     let mounted = true;
@@ -138,10 +206,18 @@ export default function NuevoFletePage() {
     async function loadData() {
       try {
         setLoading(true);
+        setErrorMessage("");
+
+        // ======================================================
+        // USUARIO
+        // ======================================================
 
         const {
-          data: { user },
-          error: userError,
+          data: {
+            user,
+          },
+          error:
+            userError,
         } =
           await supabase.auth.getUser();
 
@@ -149,20 +225,39 @@ export default function NuevoFletePage() {
           userError ||
           !user
         ) {
-          router.replace("/login");
+          router.replace(
+            "/login"
+          );
+
           return;
         }
 
+        // ======================================================
+        // PERFIL
+        // ======================================================
+
         const {
-          data: profileData,
-          error: profileError,
-        } = await supabase
-          .from("profiles")
-          .select(
-            "id, role, active"
-          )
-          .eq("id", user.id)
-          .single<Profile>();
+          data:
+            profileData,
+          error:
+            profileError,
+        } =
+          await supabase
+            .from(
+              "profiles"
+            )
+            .select(
+              `
+              id,
+              role,
+              active
+              `
+            )
+            .eq(
+              "id",
+              user.id
+            )
+            .single<Profile>();
 
         if (
           profileError ||
@@ -171,7 +266,10 @@ export default function NuevoFletePage() {
         ) {
           await supabase.auth.signOut();
 
-          router.replace("/login");
+          router.replace(
+            "/login"
+          );
+
           return;
         }
 
@@ -181,51 +279,143 @@ export default function NuevoFletePage() {
           profileData.role !==
             "superuser"
         ) {
-          router.replace("/fletes");
+          router.replace(
+            "/fletes"
+          );
+
           return;
         }
 
-        const {
-          data: customData,
-          error: customError,
-        } = await supabase
-          .from(
-            "freight_custom_fields"
-          )
-          .select(
-            `
-            id,
-            field_key,
-            label,
-            field_type,
-            visible,
-            required,
-            sort_order
-            `
-          )
-          .eq("visible", true)
-          .order("sort_order", {
-            ascending: true,
-          })
-          .order("created_at", {
-            ascending: true,
-          });
+        // ======================================================
+        // CAMPOS PERSONALIZADOS
+        // ======================================================
 
-        if (customError) {
+        const {
+          data:
+            customData,
+          error:
+            customError,
+        } =
+          await supabase
+            .from(
+              "freight_custom_fields"
+            )
+            .select(
+              `
+              id,
+              field_key,
+              label,
+              field_type,
+              visible,
+              required,
+              sort_order
+              `
+            )
+            .eq(
+              "visible",
+              true
+            )
+            .order(
+              "sort_order",
+              {
+                ascending:
+                  true,
+              }
+            )
+            .order(
+              "created_at",
+              {
+                ascending:
+                  true,
+              }
+            );
+
+        if (
+          customError
+        ) {
           throw customError;
+        }
+
+        // ======================================================
+        // CATÁLOGOS
+        // ======================================================
+
+        const {
+          data:
+            catalogData,
+          error:
+            catalogError,
+        } =
+          await supabase
+            .from(
+              "freight_catalog_options"
+            )
+            .select(
+              `
+              id,
+              catalog_type,
+              value,
+              label,
+              active,
+              sort_order
+              `
+            )
+            .eq(
+              "active",
+              true
+            )
+            .order(
+              "catalog_type",
+              {
+                ascending:
+                  true,
+              }
+            )
+            .order(
+              "sort_order",
+              {
+                ascending:
+                  true,
+              }
+            )
+            .order(
+              "label",
+              {
+                ascending:
+                  true,
+              }
+            );
+
+        if (
+          catalogError
+        ) {
+          throw catalogError;
         }
 
         if (!mounted) {
           return;
         }
 
-        setProfile(profileData);
+        setProfile(
+          profileData
+        );
 
         const fields =
           (customData ??
             []) as CustomField[];
 
-        setCustomFields(fields);
+        setCustomFields(
+          fields
+        );
+
+        setCatalogOptions(
+          (catalogData ??
+            []) as CatalogOption[]
+        );
+
+        // ======================================================
+        // VALORES INICIALES DE CAMPOS PERSONALIZADOS
+        // ======================================================
 
         const initialCustom:
           Record<
@@ -233,30 +423,37 @@ export default function NuevoFletePage() {
             string | boolean
           > = {};
 
-        fields.forEach((field) => {
-          initialCustom[
-            field.field_key
-          ] =
-            field.field_type ===
-            "boolean"
-              ? false
-              : "";
-        });
+        fields.forEach(
+          (field) => {
+            initialCustom[
+              field.field_key
+            ] =
+              field.field_type ===
+              "boolean"
+                ? false
+                : "";
+          }
+        );
 
         setCustomValues(
           initialCustom
         );
       } catch (error) {
-        console.error(error);
+        console.error(
+          error
+        );
 
         setErrorMessage(
-          error instanceof Error
+          error instanceof
+          Error
             ? error.message
             : "No se pudo cargar el formulario."
         );
       } finally {
         if (mounted) {
-          setLoading(false);
+          setLoading(
+            false
+          );
         }
       }
     }
@@ -266,31 +463,61 @@ export default function NuevoFletePage() {
     return () => {
       mounted = false;
     };
-  }, [router, supabase]);
+  }, [
+    router,
+    supabase,
+  ]);
 
-  function updateForm(
-    field: keyof FormState,
-    value: string
+  // ============================================================
+  // CATÁLOGOS
+  // ============================================================
+
+  function getCatalogOptions(
+    catalogType:
+      CatalogType
   ) {
-    setForm((previous) => ({
-      ...previous,
-      [field]: value,
-    }));
+    return catalogOptions.filter(
+      (option) =>
+        option.catalog_type ===
+        catalogType
+    );
   }
 
-  function updateCustom(
-    key: string,
+  // ============================================================
+  // ACTUALIZAR FORMULARIO
+  // ============================================================
+
+  function updateForm(
+    field:
+      keyof FormState,
+    value: string
+  ) {
+    setForm(
+      (previous) => ({
+        ...previous,
+        [field]: value,
+      })
+    );
+  }
+
+  function updateCustomValue(
+    fieldKey:
+      string,
     value:
-      | string
-      | boolean
+      string | boolean
   ) {
     setCustomValues(
       (previous) => ({
         ...previous,
-        [key]: value,
+        [fieldKey]:
+          value,
       })
     );
   }
+
+  // ============================================================
+  // VALIDACIÓN
+  // ============================================================
 
   function validateForm() {
     if (
@@ -299,8 +526,20 @@ export default function NuevoFletePage() {
       return "La fecha del servicio es obligatoria.";
     }
 
-    for (const field of customFields) {
-      if (!field.required) {
+    for (
+      const field of
+      customFields
+    ) {
+      if (
+        !field.required
+      ) {
+        continue;
+      }
+
+      if (
+        field.field_type ===
+        "boolean"
+      ) {
         continue;
       }
 
@@ -310,16 +549,12 @@ export default function NuevoFletePage() {
         ];
 
       if (
-        field.field_type !==
-          "boolean" &&
-        (
-          value ===
-            undefined ||
-          value ===
-            null ||
-          String(value).trim() ===
-            ""
-        )
+        value ===
+          undefined ||
+        value === null ||
+        String(
+          value
+        ).trim() === ""
       ) {
         return `El campo "${field.label}" es obligatorio.`;
       }
@@ -328,15 +563,22 @@ export default function NuevoFletePage() {
     return null;
   }
 
+  // ============================================================
+  // SOLICITAR GUARDADO
+  // ============================================================
+
   function requestSave(
-    event: FormEvent
+    event:
+      FormEvent<HTMLFormElement>
   ) {
     event.preventDefault();
 
     const validation =
       validateForm();
 
-    if (validation) {
+    if (
+      validation
+    ) {
       setErrorMessage(
         validation
       );
@@ -348,6 +590,10 @@ export default function NuevoFletePage() {
     setConfirmOpen(true);
   }
 
+  // ============================================================
+  // CREAR FLETE
+  // ============================================================
+
   async function saveFreight() {
     if (saving) {
       return;
@@ -357,18 +603,34 @@ export default function NuevoFletePage() {
       setSaving(true);
       setErrorMessage("");
 
+      // ======================================================
+      // SESIÓN
+      // ======================================================
+
       const {
-        data: { session },
+        data: {
+          session,
+        },
       } =
         await supabase.auth.getSession();
 
       if (!session) {
-        router.replace("/login");
+        router.replace(
+          "/login"
+        );
+
         return;
       }
 
+      // ======================================================
+      // CAMPOS PERSONALIZADOS
+      // ======================================================
+
       const normalizedCustom:
-        Record<string, unknown> = {};
+        Record<
+          string,
+          unknown
+        > = {};
 
       customFields.forEach(
         (field) => {
@@ -386,7 +648,9 @@ export default function NuevoFletePage() {
             ] =
               value === ""
                 ? null
-                : Number(value);
+                : Number(
+                    value
+                  );
 
             return;
           }
@@ -397,11 +661,16 @@ export default function NuevoFletePage() {
         }
       );
 
+      // ======================================================
+      // API
+      // ======================================================
+
       const response =
         await fetch(
           "/api/fletes",
           {
-            method: "POST",
+            method:
+              "POST",
 
             headers: {
               "Content-Type":
@@ -427,6 +696,9 @@ export default function NuevoFletePage() {
 
                 service_type:
                   form.service_type,
+
+                category:
+                  form.category,
 
                 container:
                   form.container,
@@ -471,20 +743,25 @@ export default function NuevoFletePage() {
       const data =
         await response.json();
 
-      if (!response.ok) {
+      if (
+        !response.ok
+      ) {
         throw new Error(
           data.error ??
             "No se pudo crear el flete."
         );
       }
 
+      // ======================================================
+      // ÉXITO
+      // ======================================================
+
       setConfirmOpen(false);
 
-      setToast({
-        folio:
-          data.folio ??
-          "Flete creado",
-      });
+      setSuccessFolio(
+        data.folio ??
+          "Flete creado"
+      );
 
       window.setTimeout(
         () => {
@@ -495,12 +772,15 @@ export default function NuevoFletePage() {
         3000
       );
     } catch (error) {
-      console.error(error);
+      console.error(
+        error
+      );
 
       setConfirmOpen(false);
 
       setErrorMessage(
-        error instanceof Error
+        error instanceof
+        Error
           ? error.message
           : "No se pudo guardar el flete."
       );
@@ -509,11 +789,15 @@ export default function NuevoFletePage() {
     }
   }
 
+  // ============================================================
+  // LOADING
+  // ============================================================
+
   if (loading) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-slate-50 dark:bg-slate-950">
         <div className="text-center">
-          <div className="mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-4 border-slate-200 border-t-slate-900 dark:border-slate-700 dark:border-t-white" />
+          <div className="mx-auto mb-4 h-9 w-9 animate-spin rounded-full border-4 border-slate-200 border-t-slate-900 dark:border-slate-700 dark:border-t-white" />
 
           <p className="text-sm text-slate-500 dark:text-slate-400">
             Cargando formulario...
@@ -527,8 +811,16 @@ export default function NuevoFletePage() {
     return null;
   }
 
+  // ============================================================
+  // UI
+  // ============================================================
+
   return (
-    <main className="min-h-screen bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-white">
+    <main className="min-h-screen bg-slate-50 text-slate-900 transition-colors dark:bg-slate-950 dark:text-white">
+      {/* =======================================================
+          HEADER
+      ======================================================== */}
+
       <header className="border-b border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
         <div className="mx-auto flex max-w-7xl items-start justify-between gap-4 px-6 py-5">
           <div className="flex items-start gap-4">
@@ -565,6 +857,10 @@ export default function NuevoFletePage() {
         </div>
       </header>
 
+      {/* =======================================================
+          CONTENIDO
+      ======================================================== */}
+
       <section className="mx-auto max-w-7xl px-6 py-7">
         {errorMessage && (
           <div className="mb-5 rounded-xl border border-red-200 bg-red-50 px-5 py-4 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300">
@@ -573,27 +869,38 @@ export default function NuevoFletePage() {
         )}
 
         <form
-          onSubmit={requestSave}
+          onSubmit={
+            requestSave
+          }
           className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900"
         >
+          {/* ===================================================
+              INFORMACIÓN
+          ==================================================== */}
+
           <div className="border-b border-slate-200 px-6 py-5 dark:border-slate-800">
             <h2 className="text-lg font-bold">
               Información del servicio
             </h2>
 
             <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-              Los datos oficiales se
-              guardarán en Supabase.
+              Selecciona las opciones
+              correspondientes y
+              completa los datos del
+              servicio.
             </p>
           </div>
 
           <div className="grid gap-5 p-6 md:grid-cols-2 xl:grid-cols-3">
+            {/* FECHA */}
+
             <Field
               label="Fecha"
               required
             >
               <input
                 type="date"
+                required
                 value={
                   form.service_date
                 }
@@ -603,26 +910,37 @@ export default function NuevoFletePage() {
                     event.target.value
                   )
                 }
-                required
-                className={inputClass}
+                className={
+                  inputClass
+                }
               />
             </Field>
 
+            {/* UNIDAD */}
+
             <Field label="Unidad">
-              <input
-                value={form.unit}
-                onChange={(event) =>
+              <CatalogSelect
+                value={
+                  form.unit
+                }
+                placeholder="Selecciona una unidad"
+                options={getCatalogOptions(
+                  "UNIT"
+                )}
+                onChange={(value) =>
                   updateForm(
                     "unit",
-                    event.target.value
+                    value
                   )
                 }
-                className={inputClass}
               />
             </Field>
+
+            {/* FACTURA */}
 
             <Field label="Factura">
               <input
+                type="text"
                 value={
                   form.invoice
                 }
@@ -632,42 +950,77 @@ export default function NuevoFletePage() {
                     event.target.value
                   )
                 }
-                className={inputClass}
+                className={
+                  inputClass
+                }
               />
             </Field>
 
+            {/* CLIENTE */}
+
             <Field label="Cliente">
-              <input
+              <CatalogSelect
                 value={
                   form.client
                 }
-                onChange={(event) =>
+                placeholder="Selecciona un cliente"
+                options={getCatalogOptions(
+                  "CLIENT"
+                )}
+                onChange={(value) =>
                   updateForm(
                     "client",
-                    event.target.value
+                    value
                   )
                 }
-                className={inputClass}
               />
             </Field>
 
+            {/* TIPO */}
+
             <Field label="Tipo">
-              <input
+              <CatalogSelect
                 value={
                   form.service_type
                 }
-                onChange={(event) =>
+                placeholder="Selecciona un tipo"
+                options={getCatalogOptions(
+                  "SERVICE_TYPE"
+                )}
+                onChange={(value) =>
                   updateForm(
                     "service_type",
-                    event.target.value
+                    value
                   )
                 }
-                className={inputClass}
               />
             </Field>
 
+            {/* CATEGORÍA */}
+
+            <Field label="Categoría">
+              <CatalogSelect
+                value={
+                  form.category
+                }
+                placeholder="Selecciona una categoría"
+                options={getCatalogOptions(
+                  "CATEGORY"
+                )}
+                onChange={(value) =>
+                  updateForm(
+                    "category",
+                    value
+                  )
+                }
+              />
+            </Field>
+
+            {/* CONTENEDOR */}
+
             <Field label="Contenedor">
               <input
+                type="text"
                 value={
                   form.container
                 }
@@ -677,9 +1030,13 @@ export default function NuevoFletePage() {
                     event.target.value
                   )
                 }
-                className={inputClass}
+                className={
+                  inputClass
+                }
               />
             </Field>
+
+            {/* PESO */}
 
             <Field label="Peso">
               <input
@@ -694,29 +1051,39 @@ export default function NuevoFletePage() {
                     event.target.value
                   )
                 }
-                className={inputClass}
+                className={
+                  inputClass
+                }
               />
             </Field>
 
+            {/* DESTINO */}
+
             <Field label="Destino">
-              <input
+              <CatalogSelect
                 value={
                   form.destination
                 }
-                onChange={(event) =>
+                placeholder="Selecciona un destino"
+                options={getCatalogOptions(
+                  "DESTINATION"
+                )}
+                onChange={(value) =>
                   updateForm(
                     "destination",
-                    event.target.value
+                    value
                   )
                 }
-                className={inputClass}
               />
             </Field>
+
+            {/* FLETE RODRIGO */}
 
             <Field label="Flete Rodrigo">
               <input
                 type="number"
                 step="any"
+                min="0"
                 value={
                   form.rodrigo_cash_freight
                 }
@@ -726,14 +1093,19 @@ export default function NuevoFletePage() {
                     event.target.value
                   )
                 }
-                className={inputClass}
+                className={
+                  inputClass
+                }
               />
             </Field>
+
+            {/* FLETE FACTURA */}
 
             <Field label="Flete factura">
               <input
                 type="number"
                 step="any"
+                min="0"
                 value={
                   form.invoice_freight
                 }
@@ -743,14 +1115,19 @@ export default function NuevoFletePage() {
                     event.target.value
                   )
                 }
-                className={inputClass}
+                className={
+                  inputClass
+                }
               />
             </Field>
+
+            {/* ANTICIPO CARLOS */}
 
             <Field label="Anticipo Carlos">
               <input
                 type="number"
                 step="any"
+                min="0"
                 value={
                   form.carlos_cash_advance
                 }
@@ -760,14 +1137,19 @@ export default function NuevoFletePage() {
                     event.target.value
                   )
                 }
-                className={inputClass}
+                className={
+                  inputClass
+                }
               />
             </Field>
+
+            {/* PAGO CARLOS */}
 
             <Field label="Pago Carlos">
               <input
                 type="number"
                 step="any"
+                min="0"
                 value={
                   form.carlos_invoice_payment
                 }
@@ -777,9 +1159,13 @@ export default function NuevoFletePage() {
                     event.target.value
                   )
                 }
-                className={inputClass}
+                className={
+                  inputClass
+                }
               />
             </Field>
+
+            {/* OBSERVACIONES */}
 
             <div className="md:col-span-2 xl:col-span-3">
               <Field label="Observaciones">
@@ -794,33 +1180,52 @@ export default function NuevoFletePage() {
                       event.target.value
                     )
                   }
-                  className={inputClass}
+                  className={
+                    inputClass
+                  }
                 />
               </Field>
             </div>
           </div>
 
-          {customFields.length > 0 && (
+          {/* ===================================================
+              CAMPOS PERSONALIZADOS
+          ==================================================== */}
+
+          {customFields.length >
+            0 && (
             <>
               <div className="border-y border-slate-200 bg-slate-50 px-6 py-4 dark:border-slate-800 dark:bg-slate-950/40">
                 <h2 className="font-bold">
                   Campos personalizados
                 </h2>
+
+                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                  Información adicional
+                  configurada para los
+                  fletes.
+                </p>
               </div>
 
               <div className="grid gap-5 p-6 md:grid-cols-2 xl:grid-cols-3">
                 {customFields.map(
                   (field) => (
                     <CustomFieldInput
-                      key={field.id}
-                      field={field}
+                      key={
+                        field.id
+                      }
+                      field={
+                        field
+                      }
                       value={
                         customValues[
                           field.field_key
                         ]
                       }
-                      onChange={(value) =>
-                        updateCustom(
+                      onChange={(
+                        value
+                      ) =>
+                        updateCustomValue(
                           field.field_key,
                           value
                         )
@@ -832,23 +1237,32 @@ export default function NuevoFletePage() {
             </>
           )}
 
+          {/* ===================================================
+              BOTONES
+          ==================================================== */}
+
           <div className="flex justify-end gap-3 border-t border-slate-200 px-6 py-5 dark:border-slate-800">
             <button
               type="button"
+              disabled={
+                saving
+              }
               onClick={() =>
                 router.push(
                   "/fletes"
                 )
               }
-              className="rounded-xl border border-slate-300 px-5 py-3 text-sm font-medium hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800"
+              className="rounded-xl border border-slate-300 bg-white px-5 py-3 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
             >
               Cancelar
             </button>
 
             <button
               type="submit"
-              disabled={saving}
-              className="rounded-xl bg-slate-900 px-6 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-50 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-200"
+              disabled={
+                saving
+              }
+              className="rounded-xl bg-slate-900 px-6 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-200"
             >
               Guardar flete
             </button>
@@ -856,10 +1270,14 @@ export default function NuevoFletePage() {
         </form>
       </section>
 
+      {/* =======================================================
+          CONFIRMACIÓN
+      ======================================================== */}
+
       {confirmOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/55 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-md rounded-2xl bg-white p-7 text-center shadow-2xl dark:bg-slate-900">
-            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-amber-100 text-3xl font-bold text-amber-700 dark:bg-amber-950 dark:text-amber-300">
+          <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-7 text-center shadow-2xl dark:border-slate-800 dark:bg-slate-900">
+            <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-amber-100 text-xl font-bold text-amber-700 dark:bg-amber-950/50 dark:text-amber-300">
               !
             </div>
 
@@ -867,30 +1285,34 @@ export default function NuevoFletePage() {
               ¿Guardar este flete?
             </h2>
 
-            <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
+            <p className="mt-2 text-sm leading-6 text-slate-500 dark:text-slate-400">
               Se creará un nuevo
-              registro oficial y el
-              movimiento quedará
-              registrado en Auditoría.
+              registro y el movimiento
+              quedará registrado en
+              Auditoría.
             </p>
 
             <div className="mt-6 flex justify-center gap-3">
               <button
                 type="button"
-                disabled={saving}
+                disabled={
+                  saving
+                }
                 onClick={() =>
                   setConfirmOpen(
                     false
                   )
                 }
-                className="rounded-xl border border-slate-300 px-5 py-3 text-sm font-medium dark:border-slate-700"
+                className="rounded-xl border border-slate-300 px-5 py-3 text-sm font-medium disabled:opacity-50 dark:border-slate-700"
               >
                 Cancelar
               </button>
 
               <button
                 type="button"
-                disabled={saving}
+                disabled={
+                  saving
+                }
                 onClick={() =>
                   void saveFreight()
                 }
@@ -905,11 +1327,15 @@ export default function NuevoFletePage() {
         </div>
       )}
 
-      {toast && (
+      {/* =======================================================
+          ÉXITO
+      ======================================================== */}
+
+      {successFolio && (
         <div className="pointer-events-none fixed inset-0 z-[100] flex items-center justify-center p-4">
           <div className="relative w-full max-w-md overflow-hidden rounded-2xl border border-emerald-200 bg-white p-7 text-center shadow-2xl dark:border-emerald-900 dark:bg-slate-900">
-            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-emerald-100 text-3xl text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">
-              ✓
+            <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-emerald-100 font-bold text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300">
+              OK
             </div>
 
             <h3 className="text-xl font-bold">
@@ -917,8 +1343,8 @@ export default function NuevoFletePage() {
             </h3>
 
             <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
-              {toast.folio} se guardó
-              correctamente.
+              {successFolio} se
+              guardó correctamente.
             </p>
 
             <p className="mt-1 text-xs text-slate-400">
@@ -942,8 +1368,19 @@ export default function NuevoFletePage() {
   );
 }
 
+// ============================================================
+// ESTILOS
+// ============================================================
+
 const inputClass =
   "w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 dark:border-slate-700 dark:bg-slate-950 dark:text-white";
+
+const selectClass =
+  "w-full cursor-pointer appearance-auto rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 dark:border-slate-700 dark:bg-slate-950 dark:text-white";
+
+// ============================================================
+// FIELD
+// ============================================================
 
 function Field({
   label,
@@ -952,7 +1389,7 @@ function Field({
 }: {
   label: string;
   required?: boolean;
-  children: React.ReactNode;
+  children: ReactNode;
 }) {
   return (
     <label className="block">
@@ -971,12 +1408,68 @@ function Field({
   );
 }
 
+// ============================================================
+// SELECT DE CATÁLOGO
+// ============================================================
+
+function CatalogSelect({
+  value,
+  placeholder,
+  options,
+  onChange,
+}: {
+  value: string;
+  placeholder: string;
+  options: CatalogOption[];
+  onChange: (
+    value: string
+  ) => void;
+}) {
+  return (
+    <select
+      value={value}
+      onChange={(event) =>
+        onChange(
+          event.target.value
+        )
+      }
+      className={
+        selectClass
+      }
+    >
+      <option value="">
+        {placeholder}
+      </option>
+
+      {options.map(
+        (option) => (
+          <option
+            key={
+              option.id
+            }
+            value={
+              option.value
+            }
+          >
+            {option.label}
+          </option>
+        )
+      )}
+    </select>
+  );
+}
+
+// ============================================================
+// CAMPO PERSONALIZADO
+// ============================================================
+
 function CustomFieldInput({
   field,
   value,
   onChange,
 }: {
-  field: CustomField;
+  field:
+    CustomField;
 
   value:
     | string
@@ -1005,7 +1498,7 @@ function CustomFieldInput({
           )}
         </span>
 
-        <label className="flex h-[46px] items-center gap-3 rounded-xl border border-slate-300 px-4 dark:border-slate-700">
+        <label className="flex h-[46px] items-center gap-3 rounded-xl border border-slate-300 bg-white px-4 dark:border-slate-700 dark:bg-slate-950">
           <input
             type="checkbox"
             checked={
@@ -1029,7 +1522,9 @@ function CustomFieldInput({
 
   return (
     <Field
-      label={field.label}
+      label={
+        field.label
+      }
       required={
         field.required
       }
@@ -1050,21 +1545,23 @@ function CustomFieldInput({
             ? "any"
             : undefined
         }
+        required={
+          field.required
+        }
         value={
           typeof value ===
           "string"
             ? value
             : ""
         }
-        required={
-          field.required
-        }
         onChange={(event) =>
           onChange(
             event.target.value
           )
         }
-        className={inputClass}
+        className={
+          inputClass
+        }
       />
     </Field>
   );

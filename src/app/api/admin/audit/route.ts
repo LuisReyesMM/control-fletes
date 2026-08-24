@@ -12,6 +12,14 @@ type Profile = {
   active: boolean;
 };
 
+function cleanFilterValue(value: string) {
+  return value
+    .replace(/[(),]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 200);
+}
+
 function getAdminClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const secretKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -107,10 +115,18 @@ export async function GET(request: NextRequest) {
 
     const url = new URL(request.url);
 
-    const search = url.searchParams.get("search")?.trim() ?? "";
-    const action = url.searchParams.get("action")?.trim() ?? "";
-    const entity = url.searchParams.get("entity")?.trim() ?? "";
-    const actor = url.searchParams.get("actor")?.trim() ?? "";
+    const search = cleanFilterValue(
+      url.searchParams.get("search") ?? ""
+    );
+    const action = cleanFilterValue(
+      url.searchParams.get("action") ?? ""
+    );
+    const entity = cleanFilterValue(
+      url.searchParams.get("entity") ?? ""
+    );
+    const actor = cleanFilterValue(
+      url.searchParams.get("actor") ?? ""
+    );
 
     const from = url.searchParams.get("from")?.trim() ?? "";
     const to = url.searchParams.get("to")?.trim() ?? "";

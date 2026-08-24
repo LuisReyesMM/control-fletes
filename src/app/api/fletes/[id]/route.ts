@@ -10,74 +10,27 @@ type Role =
 
 type Profile = {
   id: string;
-
-  full_name:
-    | string
-    | null;
-
+  full_name: string | null;
   role: Role;
-
   active: boolean;
 };
 
 type FreightPayload = {
-  service_date?:
-    | string
-    | null;
-
-  unit?:
-    | string
-    | null;
-
-  invoice?:
-    | string
-    | null;
-
-  client?:
-    | string
-    | null;
-
-  service_type?:
-    | string
-    | null;
-
-  container?:
-    | string
-    | null;
-
-  weight?:
-    | number
-    | null;
-
-  destination?:
-    | string
-    | null;
-
-  rodrigo_cash_freight?:
-    | number
-    | null;
-
-  invoice_freight?:
-    | number
-    | null;
-
-  carlos_cash_advance?:
-    | number
-    | null;
-
-  carlos_invoice_payment?:
-    | number
-    | null;
-
-  observations?:
-    | string
-    | null;
-
-  custom_fields?:
-    Record<
-      string,
-      unknown
-    >;
+  service_date?: string | null;
+  unit?: string | null;
+  invoice?: string | null;
+  client?: string | null;
+  service_type?: string | null;
+  category?: string | null;
+  container?: string | null;
+  weight?: number | null;
+  destination?: string | null;
+  rodrigo_cash_freight?: number | null;
+  invoice_freight?: number | null;
+  carlos_cash_advance?: number | null;
+  carlos_invoice_payment?: number | null;
+  observations?: string | null;
+  custom_fields?: Record<string, unknown>;
 };
 
 function getAdminClient() {
@@ -146,38 +99,29 @@ function formatFolio(
     | undefined
 ) {
   if (
-    folio ===
-      null ||
-    folio ===
-      undefined
+    folio === null ||
+    folio === undefined
   ) {
     return null;
   }
 
   return `F-${String(
     folio
-  ).padStart(
-    4,
-    "0"
-  )}`;
+  ).padStart(4, "0")}`;
 }
 
 function cleanText(
   value: unknown
 ): string | null {
   if (
-    value ===
-      null ||
-    value ===
-      undefined
+    value === null ||
+    value === undefined
   ) {
     return null;
   }
 
   const text =
-    String(
-      value
-    ).trim();
+    String(value).trim();
 
   return text === ""
     ? null
@@ -188,19 +132,15 @@ function cleanNumber(
   value: unknown
 ): number | null {
   if (
-    value ===
-      null ||
-    value ===
-      undefined ||
+    value === null ||
+    value === undefined ||
     value === ""
   ) {
     return null;
   }
 
   const number =
-    Number(
-      value
-    );
+    Number(value);
 
   if (
     !Number.isFinite(
@@ -212,10 +152,6 @@ function cleanNumber(
 
   return number;
 }
-
-// ============================================================
-// AUTENTICAR USUARIO
-// ============================================================
 
 async function authenticateUser(
   request: NextRequest
@@ -249,9 +185,7 @@ async function authenticateUser(
       .slice(7)
       .trim();
 
-  if (
-    !accessToken
-  ) {
+  if (!accessToken) {
     return {
       error:
         NextResponse.json(
@@ -341,10 +275,6 @@ async function authenticateUser(
     profile,
   };
 }
-
-// ============================================================
-// AUDITORÍA
-// ============================================================
 
 async function writeAuditLog({
   request,
@@ -474,8 +404,7 @@ async function writeAuditLog({
 }
 
 // ============================================================
-// PATCH /api/fletes/[id]
-// editor / superuser
+// PATCH
 // ============================================================
 
 export async function PATCH(
@@ -541,10 +470,6 @@ export async function PATCH(
       );
     }
 
-    // ========================================================
-    // OBTENER ESTADO ANTERIOR
-    // ========================================================
-
     const {
       data:
         oldFreight,
@@ -590,10 +515,6 @@ export async function PATCH(
         updated_at:
           new Date().toISOString(),
       };
-
-    // ========================================================
-    // SOLO CAMPOS PERMITIDOS
-    // ========================================================
 
     if (
       "service_date" in
@@ -658,6 +579,15 @@ export async function PATCH(
     }
 
     if (
+      "category" in body
+    ) {
+      updatePayload.category =
+        cleanText(
+          body.category
+        );
+    }
+
+    if (
       "container" in
       body
     ) {
@@ -693,7 +623,7 @@ export async function PATCH(
       updatePayload.rodrigo_cash_freight =
         cleanNumber(
           body.rodrigo_cash_freight
-        );
+        ) ?? 0;
     }
 
     if (
@@ -703,7 +633,7 @@ export async function PATCH(
       updatePayload.invoice_freight =
         cleanNumber(
           body.invoice_freight
-        );
+        ) ?? 0;
     }
 
     if (
@@ -713,7 +643,7 @@ export async function PATCH(
       updatePayload.carlos_cash_advance =
         cleanNumber(
           body.carlos_cash_advance
-        );
+        ) ?? 0;
     }
 
     if (
@@ -723,7 +653,7 @@ export async function PATCH(
       updatePayload.carlos_invoice_payment =
         cleanNumber(
           body.carlos_invoice_payment
-        );
+        ) ?? 0;
     }
 
     if (
@@ -750,10 +680,6 @@ export async function PATCH(
           ? body.custom_fields
           : {};
     }
-
-    // ========================================================
-    // ACTUALIZAR
-    // ========================================================
 
     const {
       data:
@@ -794,10 +720,6 @@ export async function PATCH(
         }
       );
     }
-
-    // ========================================================
-    // AUDITORÍA
-    // ========================================================
 
     try {
       await writeAuditLog({
@@ -847,14 +769,6 @@ export async function PATCH(
         auditError
       );
 
-      /*
-        Intentamos devolver el registro
-        a su estado anterior.
-
-        Eliminamos campos que no conviene
-        escribir directamente.
-      */
-
       const rollbackPayload = {
         service_date:
           oldFreight.service_date,
@@ -870,6 +784,9 @@ export async function PATCH(
 
         service_type:
           oldFreight.service_type,
+
+        category:
+          oldFreight.category,
 
         container:
           oldFreight.container,
@@ -973,8 +890,7 @@ export async function PATCH(
 }
 
 // ============================================================
-// DELETE /api/fletes/[id]
-// SOLO SUPERUSER
+// DELETE
 // ============================================================
 
 export async function DELETE(
@@ -1038,10 +954,6 @@ export async function DELETE(
       );
     }
 
-    // ========================================================
-    // OBTENER FLETE ANTES DE BORRAR
-    // ========================================================
-
     const {
       data:
         oldFreight,
@@ -1073,10 +985,6 @@ export async function DELETE(
       );
     }
 
-    // ========================================================
-    // ELIMINAR
-    // ========================================================
-
     const {
       error:
         deleteError,
@@ -1093,11 +1001,6 @@ export async function DELETE(
     if (
       deleteError
     ) {
-      console.error(
-        "Error eliminando flete:",
-        deleteError
-      );
-
       return NextResponse.json(
         {
           error:
@@ -1109,10 +1012,6 @@ export async function DELETE(
         }
       );
     }
-
-    // ========================================================
-    // AUDITORÍA
-    // ========================================================
 
     try {
       await writeAuditLog({
@@ -1162,20 +1061,10 @@ export async function DELETE(
         auditError
       );
 
-      /*
-        En DELETE no intentamos recrear automáticamente
-        un registro eliminado porque podría tener relaciones
-        con otras tablas.
-
-        Más adelante podemos mover estas operaciones a una
-        función PostgreSQL transaccional para hacer que
-        DELETE + AUDIT sean 100% atómicos.
-      */
-
       return NextResponse.json(
         {
           error:
-            "El flete fue eliminado, pero hubo un problema al registrar la auditoría. Revisa el servidor.",
+            "El flete fue eliminado, pero hubo un problema al registrar la auditoría.",
         },
         {
           status: 500,
@@ -1196,11 +1085,6 @@ export async function DELETE(
       },
     });
   } catch (error) {
-    console.error(
-      "DELETE /api/fletes/[id]:",
-      error
-    );
-
     return NextResponse.json(
       {
         error:
