@@ -13,6 +13,7 @@ import {
 } from "next/navigation";
 
 import ThemeToggle from "@/components/theme-toggle";
+
 import {
   createClient,
 } from "@/lib/supabase/client";
@@ -28,36 +29,38 @@ type Profile = {
   active: boolean;
 };
 
+type CatalogType =
+  | "UNIT"
+  | "CLIENT"
+  | "SERVICE_TYPE"
+  | "CATEGORY"
+  | "DESTINATION";
+
+type CatalogOption = {
+  id: string;
+  catalog_type: CatalogType;
+  value: string;
+  label: string;
+  active: boolean;
+  sort_order: number;
+};
+
 type FreightService = {
   id: string;
   folio: number;
 
-  service_date:
-    string;
+  service_date: string;
 
-  unit:
-    string | null;
+  unit: string | null;
+  invoice: string | null;
+  client: string | null;
+  service_type: string | null;
+  category: string | null;
+  container: string | null;
 
-  invoice:
-    string | null;
+  weight: number | null;
 
-  client:
-    string | null;
-
-  service_type:
-    string | null;
-
-  category:
-    string | null;
-
-  container:
-    string | null;
-
-  weight:
-    number | null;
-
-  destination:
-    string | null;
+  destination: string | null;
 
   rodrigo_cash_freight:
     number | null;
@@ -100,15 +103,18 @@ type FormState = {
 
 function optionalNumber(
   value: string
-) {
-  if (
-    value.trim() === ""
-  ) {
+): number | null {
+  const normalized =
+    value
+      .replace(/,/g, "")
+      .trim();
+
+  if (!normalized) {
     return null;
   }
 
   const parsed =
-    Number(value);
+    Number(normalized);
 
   return Number.isFinite(
     parsed
@@ -155,6 +161,14 @@ export default function EditarFletePage({
     );
 
   const [
+    catalogOptions,
+    setCatalogOptions,
+  ] =
+    useState<
+      CatalogOption[]
+    >([]);
+
+  const [
     loading,
     setLoading,
   ] =
@@ -198,11 +212,16 @@ export default function EditarFletePage({
       container: "",
       weight: "",
       destination: "",
-      rodrigo_cash_freight: "",
-      invoice_freight: "",
-      carlos_cash_advance: "",
-      carlos_invoice_payment: "",
-      observations: "",
+      rodrigo_cash_freight:
+        "",
+      invoice_freight:
+        "",
+      carlos_cash_advance:
+        "",
+      carlos_invoice_payment:
+        "",
+      observations:
+        "",
     });
 
   useEffect(() => {
@@ -210,14 +229,28 @@ export default function EditarFletePage({
 
     async function loadData() {
       try {
+        setLoading(
+          true
+        );
+
+        setErrorMessage(
+          ""
+        );
+
         const {
           data: {
             user,
           },
+
+          error:
+            userError,
         } =
           await supabase.auth.getUser();
 
-        if (!user) {
+        if (
+          userError ||
+          !user
+        ) {
           router.replace(
             "/login"
           );
@@ -228,6 +261,9 @@ export default function EditarFletePage({
         const {
           data:
             profileData,
+
+          error:
+            profileError,
         } =
           await supabase
             .from(
@@ -243,6 +279,7 @@ export default function EditarFletePage({
             .single<Profile>();
 
         if (
+          profileError ||
           !profileData ||
           !profileData.active
         ) {
@@ -266,39 +303,77 @@ export default function EditarFletePage({
           return;
         }
 
-        const {
-          data:
-            freightData,
+        const [
+          freightResult,
+          catalogResult,
+        ] =
+          await Promise.all([
+            supabase
+              .from(
+                "freight_services"
+              )
+              .select("*")
+              .eq(
+                "id",
+                id
+              )
+              .single(),
 
-          error:
-            freightError,
-        } =
-          await supabase
-            .from(
-              "freight_services"
-            )
-            .select("*")
-            .eq(
-              "id",
-              id
-            )
-            .single();
+            supabase
+              .from(
+                "freight_catalog_options"
+              )
+              .select(
+                `
+                id,
+                catalog_type,
+                value,
+                label,
+                active,
+                sort_order
+                `
+              )
+              .eq(
+                "active",
+                true
+              )
+              .order(
+                "catalog_type",
+                {
+                  ascending:
+                    true,
+                }
+              )
+              .order(
+                "sort_order",
+                {
+                  ascending:
+                    true,
+                }
+              ),
+          ]);
 
         if (
-          freightError ||
-          !freightData
+          freightResult.error ||
+          !freightResult.data
         ) {
           throw new Error(
             "No se encontró el flete."
           );
         }
 
+        if (
+          catalogResult.error
+        ) {
+          throw catalogResult.error;
+        }
+
         if (!mounted) {
           return;
         }
 
-        const service =
-          freightData as FreightService;
+       const service: FreightService =
+  freightResult.data as FreightService;
 
         setProfile(
           profileData
@@ -306,6 +381,13 @@ export default function EditarFletePage({
 
         setFreight(
           service
+        );
+
+        setCatalogOptions(
+          (
+            catalogResult.data ??
+            []
+          ) as CatalogOption[]
         );
 
         setForm({
@@ -339,7 +421,9 @@ export default function EditarFletePage({
 
           weight:
             service.weight ===
-              null
+              null ||
+            service.weight ===
+              undefined
               ? ""
               : String(
                   service.weight
@@ -378,6 +462,10 @@ export default function EditarFletePage({
             "",
         });
       } catch (error) {
+        if (!mounted) {
+          return;
+        }
+
         setErrorMessage(
           error instanceof
           Error
@@ -412,11 +500,74 @@ export default function EditarFletePage({
       string
   ) {
     setForm(
-      (previous) => ({
+      (
+        previous
+      ) => ({
         ...previous,
-        [key]: value,
+
+        [key]:
+          value,
       })
     );
+  }
+
+  function getCatalogOptions(
+    catalogType:
+      CatalogType,
+
+    currentValue:
+      string
+  ) {
+    const filtered =
+      catalogOptions.filter(
+        (
+          option
+        ) =>
+          option.catalog_type ===
+          catalogType
+      );
+
+    const currentExists =
+      currentValue
+        ? filtered.some(
+            (
+              option
+            ) =>
+              option.value ===
+              currentValue
+          )
+        : true;
+
+    if (
+      currentValue &&
+      !currentExists
+    ) {
+      return [
+        {
+          id:
+            `current-${catalogType}-${currentValue}`,
+
+          catalog_type:
+            catalogType,
+
+          value:
+            currentValue,
+
+          label:
+            `${currentValue} (valor actual)`,
+
+          active:
+            false,
+
+          sort_order:
+            -1,
+        },
+
+        ...filtered,
+      ];
+    }
+
+    return filtered;
   }
 
   function requestSave(
@@ -432,16 +583,28 @@ export default function EditarFletePage({
 
   async function saveChanges() {
     try {
-      setSaving(true);
+      setSaving(
+        true
+      );
+
+      setErrorMessage(
+        ""
+      );
 
       const {
         data: {
           session,
         },
+
+        error:
+          sessionError,
       } =
         await supabase.auth.getSession();
 
-      if (!session) {
+      if (
+        sessionError ||
+        !session
+      ) {
         router.replace(
           "/login"
         );
@@ -498,22 +661,22 @@ export default function EditarFletePage({
                 rodrigo_cash_freight:
                   optionalNumber(
                     form.rodrigo_cash_freight
-                  ),
+                  ) ?? 0,
 
                 invoice_freight:
                   optionalNumber(
                     form.invoice_freight
-                  ),
+                  ) ?? 0,
 
                 carlos_cash_advance:
                   optionalNumber(
                     form.carlos_cash_advance
-                  ),
+                  ) ?? 0,
 
                 carlos_invoice_payment:
                   optionalNumber(
                     form.carlos_invoice_payment
-                  ),
+                  ) ?? 0,
 
                 observations:
                   form.observations,
@@ -521,15 +684,31 @@ export default function EditarFletePage({
           }
         );
 
-      const data =
-        await response.json();
+      const responseText =
+        await response.text();
+
+      let data: {
+        error?: string;
+      } = {};
+
+      try {
+        data =
+          responseText
+            ? JSON.parse(
+                responseText
+              )
+            : {};
+      } catch {
+        // Si el servidor devuelve HTML
+        // u otro contenido inesperado.
+      }
 
       if (
         !response.ok
       ) {
         throw new Error(
           data.error ??
-            "No se pudo actualizar el flete."
+            `Error ${response.status}: ${responseText}`
         );
       }
 
@@ -547,7 +726,7 @@ export default function EditarFletePage({
             "/fletes"
           );
         },
-        3000
+        1800
       );
     } catch (error) {
       setConfirmOpen(
@@ -561,13 +740,15 @@ export default function EditarFletePage({
           : "No se pudo actualizar."
       );
     } finally {
-      setSaving(false);
+      setSaving(
+        false
+      );
     }
   }
 
   if (loading) {
     return (
-      <main className="flex min-h-screen items-center justify-center">
+      <main className="flex min-h-screen items-center justify-center bg-slate-50 text-slate-700 dark:bg-slate-950 dark:text-slate-200">
         Cargando...
       </main>
     );
@@ -577,7 +758,28 @@ export default function EditarFletePage({
     !profile ||
     !freight
   ) {
-    return null;
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-slate-50 dark:bg-slate-950">
+        <div className="max-w-md rounded-2xl border bg-white p-6 text-center shadow-sm dark:border-slate-800 dark:bg-slate-900">
+          <p className="text-slate-600 dark:text-slate-300">
+            No se pudo cargar el
+            flete.
+          </p>
+
+          <button
+            type="button"
+            onClick={() =>
+              router.push(
+                "/fletes"
+              )
+            }
+            className="mt-4 rounded-xl bg-slate-900 px-5 py-3 text-white dark:bg-white dark:text-slate-900"
+          >
+            Volver
+          </button>
+        </div>
+      </main>
+    );
   }
 
   const folio =
@@ -591,25 +793,26 @@ export default function EditarFletePage({
   return (
     <main className="min-h-screen bg-slate-50 dark:bg-slate-950 dark:text-white">
       <header className="border-b bg-white dark:border-slate-800 dark:bg-slate-900">
-        <div className="mx-auto flex max-w-7xl justify-between p-6">
-          <div className="flex gap-4">
+        <div className="mx-auto flex max-w-7xl items-center justify-between p-6">
+          <div className="flex items-center gap-4">
             <button
+              type="button"
               onClick={() =>
                 router.push(
                   "/fletes"
                 )
               }
-              className="text-3xl text-slate-500"
+              className="text-3xl text-slate-500 transition hover:text-slate-900 dark:hover:text-white"
             >
               ←
             </button>
 
             <div>
-              <p className="text-blue-600">
+              <p className="text-sm font-medium text-blue-600">
                 {folio}
               </p>
 
-              <h1 className="text-3xl font-bold">
+              <h1 className="text-3xl font-bold text-slate-950 dark:text-white">
                 Editar flete
               </h1>
             </div>
@@ -621,7 +824,7 @@ export default function EditarFletePage({
 
       <section className="mx-auto max-w-7xl p-6">
         {errorMessage && (
-          <div className="mb-5 rounded-xl bg-red-50 p-4 text-red-700">
+          <div className="mb-5 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-300">
             {errorMessage}
           </div>
         )}
@@ -630,123 +833,248 @@ export default function EditarFletePage({
           onSubmit={
             requestSave
           }
-          className="rounded-2xl border bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900"
+          className="overflow-hidden rounded-2xl border bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900"
         >
           <div className="grid gap-5 p-6 md:grid-cols-2 xl:grid-cols-3">
-            {(
-              [
-                [
-                  "service_date",
-                  "Fecha",
-                ],
+            <Field label="Fecha">
+              <input
+                type="date"
+                value={
+                  form.service_date
+                }
+                onChange={(event) =>
+                  updateForm(
+                    "service_date",
+                    event.target.value
+                  )
+                }
+                className={
+                  inputClass
+                }
+                required
+              />
+            </Field>
 
-                [
+            <CatalogField
+              label="Unidad"
+              value={
+                form.unit
+              }
+              options={getCatalogOptions(
+                "UNIT",
+                form.unit
+              )}
+              placeholder="Seleccionar unidad"
+              onChange={(value) =>
+                updateForm(
                   "unit",
-                  "Unidad",
-                ],
+                  value
+                )
+              }
+            />
 
-                [
-                  "invoice",
-                  "Factura",
-                ],
+            <Field label="Factura">
+              <input
+                type="text"
+                value={
+                  form.invoice
+                }
+                onChange={(event) =>
+                  updateForm(
+                    "invoice",
+                    event.target.value
+                  )
+                }
+                className={
+                  inputClass
+                }
+              />
+            </Field>
 
-                [
+            <CatalogField
+              label="Cliente"
+              value={
+                form.client
+              }
+              options={getCatalogOptions(
+                "CLIENT",
+                form.client
+              )}
+              placeholder="Seleccionar cliente"
+              onChange={(value) =>
+                updateForm(
                   "client",
-                  "Cliente",
-                ],
+                  value
+                )
+              }
+            />
 
-                [
+            <CatalogField
+              label="Tipo"
+              value={
+                form.service_type
+              }
+              options={getCatalogOptions(
+                "SERVICE_TYPE",
+                form.service_type
+              )}
+              placeholder="Seleccionar tipo"
+              onChange={(value) =>
+                updateForm(
                   "service_type",
-                  "Tipo",
-                ],
+                  value
+                )
+              }
+            />
 
-                [
+            <CatalogField
+              label="Categoría"
+              value={
+                form.category
+              }
+              options={getCatalogOptions(
+                "CATEGORY",
+                form.category
+              )}
+              placeholder="Seleccionar categoría"
+              onChange={(value) =>
+                updateForm(
                   "category",
-                  "Categoría",
-                ],
+                  value
+                )
+              }
+            />
 
-                [
-                  "container",
-                  "Contenedor",
-                ],
+            <Field label="Contenedor">
+              <input
+                type="text"
+                value={
+                  form.container
+                }
+                onChange={(event) =>
+                  updateForm(
+                    "container",
+                    event.target.value
+                  )
+                }
+                className={
+                  inputClass
+                }
+              />
+            </Field>
 
-                [
-                  "weight",
-                  "Peso",
-                ],
+            <Field label="Peso">
+              <input
+                type="number"
+                step="any"
+                value={
+                  form.weight
+                }
+                onChange={(event) =>
+                  updateForm(
+                    "weight",
+                    event.target.value
+                  )
+                }
+                className={
+                  inputClass
+                }
+              />
+            </Field>
 
-                [
+            <CatalogField
+              label="Destino"
+              value={
+                form.destination
+              }
+              options={getCatalogOptions(
+                "DESTINATION",
+                form.destination
+              )}
+              placeholder="Seleccionar destino"
+              onChange={(value) =>
+                updateForm(
                   "destination",
-                  "Destino",
-                ],
+                  value
+                )
+              }
+            />
 
-                [
-                  "rodrigo_cash_freight",
-                  "Flete Rodrigo",
-                ],
+            <Field label="Flete Rodrigo">
+              <input
+                type="number"
+                step="any"
+                value={
+                  form.rodrigo_cash_freight
+                }
+                onChange={(event) =>
+                  updateForm(
+                    "rodrigo_cash_freight",
+                    event.target.value
+                  )
+                }
+                className={
+                  inputClass
+                }
+              />
+            </Field>
 
-                [
-                  "invoice_freight",
-                  "Flete factura",
-                ],
+            <Field label="Flete factura">
+              <input
+                type="number"
+                step="any"
+                value={
+                  form.invoice_freight
+                }
+                onChange={(event) =>
+                  updateForm(
+                    "invoice_freight",
+                    event.target.value
+                  )
+                }
+                className={
+                  inputClass
+                }
+              />
+            </Field>
 
-                [
-                  "carlos_cash_advance",
-                  "Anticipo Carlos",
-                ],
+            <Field label="Anticipo Carlos">
+              <input
+                type="number"
+                step="any"
+                value={
+                  form.carlos_cash_advance
+                }
+                onChange={(event) =>
+                  updateForm(
+                    "carlos_cash_advance",
+                    event.target.value
+                  )
+                }
+                className={
+                  inputClass
+                }
+              />
+            </Field>
 
-                [
-                  "carlos_invoice_payment",
-                  "Pago Carlos",
-                ],
-              ] as const
-            ).map(
-              ([
-                key,
-                label,
-              ]) => (
-                <Field
-                  key={key}
-                  label={
-                    label
-                  }
-                >
-                  <input
-                    type={
-                      key ===
-                      "service_date"
-                        ? "date"
-                        : [
-                              "weight",
-                              "rodrigo_cash_freight",
-                              "invoice_freight",
-                              "carlos_cash_advance",
-                              "carlos_invoice_payment",
-                            ].includes(
-                              key
-                            )
-                          ? "number"
-                          : "text"
-                    }
-                    step="any"
-                    value={
-                      form[
-                        key
-                      ]
-                    }
-                    onChange={(e) =>
-                      updateForm(
-                        key,
-                        e.target.value
-                      )
-                    }
-                    className={
-                      inputClass
-                    }
-                  />
-                </Field>
-              )
-            )}
+            <Field label="Pago Carlos">
+              <input
+                type="number"
+                step="any"
+                value={
+                  form.carlos_invoice_payment
+                }
+                onChange={(event) =>
+                  updateForm(
+                    "carlos_invoice_payment",
+                    event.target.value
+                  )
+                }
+                className={
+                  inputClass
+                }
+              />
+            </Field>
 
             <div className="md:col-span-2 xl:col-span-3">
               <Field label="Observaciones">
@@ -755,21 +1083,19 @@ export default function EditarFletePage({
                   value={
                     form.observations
                   }
-                  onChange={(e) =>
+                  onChange={(event) =>
                     updateForm(
                       "observations",
-                      e.target.value
+                      event.target.value
                     )
                   }
-                  className={
-                    inputClass
-                  }
+                  className={`${inputClass} min-h-28 resize-y`}
                 />
               </Field>
             </div>
           </div>
 
-          <div className="flex justify-end gap-3 border-t p-6 dark:border-slate-800">
+          <div className="flex flex-col-reverse gap-3 border-t p-6 dark:border-slate-800 sm:flex-row sm:justify-end">
             <button
               type="button"
               onClick={() =>
@@ -777,14 +1103,17 @@ export default function EditarFletePage({
                   "/fletes"
                 )
               }
-              className="rounded-xl border px-5 py-3"
+              className="rounded-xl border border-slate-300 px-5 py-3 font-medium text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
             >
               Cancelar
             </button>
 
             <button
               type="submit"
-              className="rounded-xl bg-slate-900 px-6 py-3 text-white dark:bg-white dark:text-slate-900"
+              disabled={
+                saving
+              }
+              className="rounded-xl bg-slate-900 px-6 py-3 font-medium text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-200"
             >
               Guardar cambios
             </button>
@@ -793,32 +1122,45 @@ export default function EditarFletePage({
       </section>
 
       {confirmOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-          <div className="rounded-2xl bg-white p-7 text-center dark:bg-slate-900">
-            <h2 className="text-xl font-bold">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white p-7 shadow-2xl dark:bg-slate-900">
+            <h2 className="text-xl font-bold text-slate-950 dark:text-white">
               ¿Guardar cambios?
             </h2>
 
-            <div className="mt-6 flex gap-3">
+            <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
+              Se actualizará el flete{" "}
+              <strong>
+                {folio}
+              </strong>
+              .
+            </p>
+
+            <div className="mt-6 flex justify-end gap-3">
               <button
+                type="button"
                 onClick={() =>
                   setConfirmOpen(
                     false
                   )
                 }
-                className="rounded-xl border px-5 py-3"
+                disabled={
+                  saving
+                }
+                className="rounded-xl border border-slate-300 px-5 py-3 dark:border-slate-700"
               >
                 Cancelar
               </button>
 
               <button
+                type="button"
                 onClick={() =>
                   void saveChanges()
                 }
                 disabled={
                   saving
                 }
-                className="rounded-xl bg-slate-900 px-5 py-3 text-white dark:bg-white dark:text-slate-900"
+                className="rounded-xl bg-slate-900 px-5 py-3 text-white disabled:opacity-50 dark:bg-white dark:text-slate-900"
               >
                 {saving
                   ? "Guardando..."
@@ -830,7 +1172,7 @@ export default function EditarFletePage({
       )}
 
       {successOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center pointer-events-none">
+        <div className="pointer-events-none fixed inset-0 z-[100] flex items-center justify-center bg-black/20 p-4">
           <div className="rounded-2xl bg-white p-7 text-center shadow-2xl dark:bg-slate-900">
             <div className="text-4xl text-emerald-600">
               ✓
@@ -851,7 +1193,7 @@ export default function EditarFletePage({
 }
 
 const inputClass =
-  "w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-blue-500 dark:border-slate-700 dark:bg-slate-950 dark:text-white";
+  "w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10 dark:border-slate-700 dark:bg-slate-950 dark:text-white";
 
 function Field({
   label,
@@ -864,11 +1206,80 @@ function Field({
 }) {
   return (
     <label>
-      <span className="mb-2 block text-sm font-medium">
+      <span className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-200">
         {label}
       </span>
 
       {children}
     </label>
+  );
+}
+
+function CatalogField({
+  label,
+  value,
+  options,
+  placeholder,
+  onChange,
+}: {
+  label: string;
+
+  value: string;
+
+  options:
+    CatalogOption[];
+
+  placeholder:
+    string;
+
+  onChange:
+    (
+      value:
+        string
+    ) => void;
+}) {
+  return (
+    <Field
+      label={
+        label
+      }
+    >
+      <select
+        value={
+          value
+        }
+        onChange={(event) =>
+          onChange(
+            event.target.value
+          )
+        }
+        className={
+          inputClass
+        }
+      >
+        <option value="">
+          {placeholder}
+        </option>
+
+        {options.map(
+          (
+            option
+          ) => (
+            <option
+              key={
+                option.id
+              }
+              value={
+                option.value
+              }
+            >
+              {
+                option.label
+              }
+            </option>
+          )
+        )}
+      </select>
+    </Field>
   );
 }
