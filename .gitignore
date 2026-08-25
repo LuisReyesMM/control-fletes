@@ -39,3 +39,23 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# nested mobile repositories backups
+mobile/.git-backup/
+mobile-sdk54/.git-backup/
+
+# mobile dependencies/cache
+mobile/node_modules/
+mobile/.expo/
+mobile-sdk54/node_modules/
+mobile-sdk54/.expo/
+
+# mobile environment files
+mobile/.env
+mobile-sdk54/.env
+
+# old mobile project
+mobile/
+
+control-fletes-revision.zip
+proyecto-revision/
