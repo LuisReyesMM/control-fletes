@@ -1,17 +1,19 @@
 {
   "expo": {
-    "name": "mobile-sdk54",
+    "name": "Control de Fletes",
     "slug": "mobile-sdk54",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "mobilesdk54",
+    "scheme": "controlfletes",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.luisexpert369.controlfletes"
     },
     "android": {
+      "package": "com.luisexpert369.controlfletes",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
@@ -39,11 +41,18 @@
           }
         }
       ],
-      "expo-secure-store"
+      "expo-secure-store",
+      "expo-dev-client"
     ],
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "97a78dc5-7d2e-47ff-98fd-f6bb9fedb777"
+      }
     }
   }
 }
