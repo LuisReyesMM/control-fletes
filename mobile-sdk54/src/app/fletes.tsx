@@ -1281,6 +1281,67 @@ export default function FletesScreen() {
                 </Pressable>
               </View>
 
+              <View
+                style={
+                  styles.detailTopActions
+                }
+              >
+                {canEdit && (
+                  <Pressable
+                    onPress={() =>
+                      goToEdit(
+                        selectedFreight
+                      )
+                    }
+                    style={({ pressed }) => [
+                      styles.topEditButton,
+                      pressed &&
+                        styles.pressed,
+                    ]}
+                  >
+                    <Text
+                      style={
+                        styles.topEditButtonText
+                      }
+                    >
+                      Editar
+                    </Text>
+                  </Pressable>
+                )}
+
+                {canDelete && (
+                  <Pressable
+                    disabled={deleting}
+                    onPress={() =>
+                      confirmDelete(
+                        selectedFreight
+                      )
+                    }
+                    style={({ pressed }) => [
+                      styles.topDeleteButton,
+                      pressed &&
+                        styles.pressed,
+                      deleting &&
+                        styles.disabledButton,
+                    ]}
+                  >
+                    {deleting ? (
+                      <ActivityIndicator
+                        color="#dc2626"
+                      />
+                    ) : (
+                      <Text
+                        style={
+                          styles.topDeleteButtonText
+                        }
+                      >
+                        Eliminar
+                      </Text>
+                    )}
+                  </Pressable>
+                )}
+              </View>
+
               <DetailRow
                 label="Fecha"
                 value={formatDate(
@@ -1408,70 +1469,6 @@ export default function FletesScreen() {
                   )}
                 </Text>
               </View>
-
-              {canEdit && (
-                <Pressable
-                  onPress={() =>
-                    goToEdit(
-                      selectedFreight
-                    )
-                  }
-                  style={({
-                    pressed,
-                  }) => [
-                    styles.editButton,
-
-                    pressed &&
-                      styles.pressed,
-                  ]}
-                >
-                  <Text
-                    style={
-                      styles.editButtonText
-                    }
-                  >
-                    Editar flete
-                  </Text>
-                </Pressable>
-              )}
-
-              {canDelete && (
-                <Pressable
-                  disabled={
-                    deleting
-                  }
-                  onPress={() =>
-                    confirmDelete(
-                      selectedFreight
-                    )
-                  }
-                  style={({
-                    pressed,
-                  }) => [
-                    styles.deleteButton,
-
-                    pressed &&
-                      styles.pressed,
-
-                    deleting &&
-                      styles.disabledButton,
-                  ]}
-                >
-                  {deleting ? (
-                    <ActivityIndicator
-                      color="#dc2626"
-                    />
-                  ) : (
-                    <Text
-                      style={
-                        styles.deleteButtonText
-                      }
-                    >
-                      Eliminar flete
-                    </Text>
-                  )}
-                </Pressable>
-              )}
 
               <Pressable
                 onPress={() =>
@@ -1763,6 +1760,45 @@ const styles =
     disabledButton: {
       opacity:
         0.5,
+    },
+
+    detailTopActions: {
+      flexDirection: "row",
+      gap: 10,
+      marginTop: 4,
+      marginBottom: 18,
+    },
+
+    topEditButton: {
+      flex: 1,
+      height: 46,
+      borderRadius: 14,
+      backgroundColor: "#0F172A",
+      alignItems: "center",
+      justifyContent: "center",
+    },
+
+    topEditButtonText: {
+      color: "#ffffff",
+      fontWeight: "800",
+      fontSize: 15,
+    },
+
+    topDeleteButton: {
+      flex: 1,
+      height: 46,
+      borderRadius: 14,
+      backgroundColor: "#FEF2F2",
+      borderWidth: 1,
+      borderColor: "#FECACA",
+      alignItems: "center",
+      justifyContent: "center",
+    },
+
+    topDeleteButtonText: {
+      color: "#DC2626",
+      fontWeight: "800",
+      fontSize: 15,
     },
 
     statsRow: {

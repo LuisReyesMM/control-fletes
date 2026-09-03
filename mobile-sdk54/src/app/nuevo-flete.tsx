@@ -1,6 +1,7 @@
 import {
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 
@@ -24,6 +25,9 @@ import {
   router,
   type Href,
 } from "expo-router";
+
+import DateTimePicker from "@react-native-community/datetimepicker";
+import { Ionicons } from "@expo/vector-icons";
 
 import {
   getFreshSession,
@@ -186,6 +190,19 @@ function getToday() {
   return `${year}-${month}-${day}`;
 }
 
+function formatDateForInput(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function parseInputDate(value: string) {
+  const [year, month, day] = value.split("-").map(Number);
+  const parsed = new Date(year, (month || 1) - 1, day || 1);
+  return Number.isNaN(parsed.getTime()) ? new Date() : parsed;
+}
+
 const initialForm: FormState = {
   service_date:
     getToday(),
@@ -273,6 +290,34 @@ export default function NuevoFleteScreen() {
     setSaving,
   ] =
     useState(false);
+
+  const scrollRef =
+    useRef<ScrollView | null>(null);
+
+  const [
+    showDatePicker,
+    setShowDatePicker,
+  ] = useState(false);
+
+  const [
+    confirmVisible,
+    setConfirmVisible,
+  ] = useState(false);
+
+  const [
+    feedbackVisible,
+    setFeedbackVisible,
+  ] = useState(false);
+
+  const [
+    feedbackTitle,
+    setFeedbackTitle,
+  ] = useState("");
+
+  const [
+    feedbackMessage,
+    setFeedbackMessage,
+  ] = useState("");
 
   const [
     profile,
@@ -685,6 +730,14 @@ export default function NuevoFleteScreen() {
     );
   }
 
+  function scrollToBottomField() {
+    setTimeout(() => {
+      scrollRef.current?.scrollToEnd({
+        animated: true,
+      });
+    }, 140);
+  }
+
   function validateForm() {
     if (
       !form.service_date.trim()
@@ -741,7 +794,7 @@ export default function NuevoFleteScreen() {
     return null;
   }
 
-  async function saveFreight() {
+  function saveFreight() {
     if (saving) {
       return;
     }
@@ -749,40 +802,15 @@ export default function NuevoFleteScreen() {
     const validation =
       validateForm();
 
-    if (
-      validation
-    ) {
+    if (validation) {
       Alert.alert(
         "Revisa el formulario",
         validation
       );
-
       return;
     }
 
-    Alert.alert(
-      "Guardar flete",
-      "¿Deseas crear este flete?",
-      [
-        {
-          text:
-            "Cancelar",
-
-          style:
-            "cancel",
-        },
-
-        {
-          text:
-            "Guardar",
-
-          onPress:
-            () => {
-              void performSave();
-            },
-        },
-      ]
-    );
+    setConfirmVisible(true);
   }
 
   async function performSave() {
@@ -990,23 +1018,13 @@ if (!response.ok) {
       )
     : "nuevo";
 
-      Alert.alert(
-        "Flete creado",
-        `El flete ${folio} se guardó correctamente.`,
-        [
-          {
-            text:
-              "Aceptar",
-
-            onPress:
-              () => {
-                router.replace(
-                  FLETES_ROUTE
-                );
-              },
-          },
-        ]
+      setFeedbackTitle(
+        "Flete creado"
       );
+      setFeedbackMessage(
+        `El flete ${folio} se guardó correctamente.`
+      );
+      setFeedbackVisible(true);
     } catch (error) {
       Alert.alert(
         "No se pudo guardar",
@@ -1061,14 +1079,16 @@ if (!response.ok) {
           Platform.OS ===
           "ios"
             ? "padding"
-            : undefined
+            : "height"
         }
       >
         <ScrollView
+          ref={scrollRef}
           contentContainerStyle={
             styles.container
           }
           keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="interactive"
           showsVerticalScrollIndicator={
             false
           }
@@ -1123,22 +1143,82 @@ if (!response.ok) {
             Servicio
           </Text>
 
-          <FormInput
-            label="Fecha"
-            value={
-              form.service_date
+          <View
+            style={
+              styles.fieldGroup
             }
-            placeholder="AAAA-MM-DD"
-            onChangeText={(
-              value
-            ) =>
-              updateForm(
-                "service_date",
-                value
-              )
-            }
-            keyboardType="numbers-and-punctuation"
-          />
+          >
+            <Text
+              style={
+                styles.label
+              }
+            >
+              Fecha
+            </Text>
+
+            <Pressable
+              onPress={() =>
+                setShowDatePicker(
+                  true
+                )
+              }
+              style={({ pressed }) => [
+                styles.selectInput,
+                pressed &&
+                  styles.pressed,
+              ]}
+            >
+              <Text
+                style={
+                  styles.selectValue
+                }
+              >
+                {form.service_date ||
+                  "Seleccionar fecha"}
+              </Text>
+
+              <Ionicons
+                name="calendar-outline"
+                size={21}
+                color="#007AFF"
+              />
+            </Pressable>
+          </View>
+
+          {showDatePicker && (
+            <DateTimePicker
+              value={
+                form.service_date
+                  ? parseInputDate(
+                      form.service_date
+                    )
+                  : new Date()
+              }
+              mode="date"
+              display={
+                Platform.OS === "ios"
+                  ? "spinner"
+                  : "default"
+              }
+              onChange={(
+                _event,
+                selectedDate
+              ) => {
+                setShowDatePicker(
+                  false
+                );
+
+                if (selectedDate) {
+                  updateForm(
+                    "service_date",
+                    formatDateForInput(
+                      selectedDate
+                    )
+                  );
+                }
+              }}
+            />
+          )}
 
           <CatalogField
             label="Unidad"
@@ -1287,6 +1367,8 @@ if (!response.ok) {
                 "rodrigo_cash_freight",
                 value
               )
+            }            onFocus={
+              scrollToBottomField
             }
           />
 
@@ -1304,6 +1386,8 @@ if (!response.ok) {
                 "invoice_freight",
                 value
               )
+            }            onFocus={
+              scrollToBottomField
             }
           />
 
@@ -1321,6 +1405,8 @@ if (!response.ok) {
                 "carlos_cash_advance",
                 value
               )
+            }            onFocus={
+              scrollToBottomField
             }
           />
 
@@ -1338,6 +1424,8 @@ if (!response.ok) {
                 "carlos_invoice_payment",
                 value
               )
+            }            onFocus={
+              scrollToBottomField
             }
           />
 
@@ -1444,6 +1532,7 @@ if (!response.ok) {
                           nextValue
                         )
                       }
+                      onFocus={scrollToBottomField}
                     />
                   );
                 }
@@ -1477,6 +1566,9 @@ if (!response.ok) {
             textAlignVertical="top"
             style={
               styles.textArea
+            }
+            onFocus={
+              scrollToBottomField
             }
           />
 
@@ -1535,6 +1627,74 @@ if (!response.ok) {
           </Pressable>
         </ScrollView>
       </KeyboardAvoidingView>
+
+      <Modal
+        visible={confirmVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() =>
+          setConfirmVisible(false)
+        }
+      >
+        <View style={styles.dialogOverlay}>
+          <View style={styles.dialogCard}>
+            <View style={styles.dialogIconWrap}>
+              <Text style={styles.dialogIcon}>✓</Text>
+            </View>
+            <Text style={styles.dialogTitle}>Guardar flete</Text>
+            <Text style={styles.dialogMessage}>
+              ¿Deseas crear este flete con la información capturada?
+            </Text>
+            <View style={styles.dialogActions}>
+              <Pressable
+                style={styles.dialogSecondary}
+                onPress={() =>
+                  setConfirmVisible(false)
+                }
+              >
+                <Text style={styles.dialogSecondaryText}>Cancelar</Text>
+              </Pressable>
+              <Pressable
+                style={styles.dialogPrimary}
+                onPress={() => {
+                  setConfirmVisible(false);
+                  void performSave();
+                }}
+              >
+                <Text style={styles.dialogPrimaryText}>Guardar</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={feedbackVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() =>
+          setFeedbackVisible(false)
+        }
+      >
+        <View style={styles.dialogOverlay}>
+          <View style={styles.feedbackCard}>
+            <View style={styles.successCircle}>
+              <Text style={styles.successCheck}>✓</Text>
+            </View>
+            <Text style={styles.dialogTitle}>{feedbackTitle}</Text>
+            <Text style={styles.dialogMessage}>{feedbackMessage}</Text>
+            <Pressable
+              style={styles.feedbackButton}
+              onPress={() => {
+                setFeedbackVisible(false);
+                router.replace(FLETES_ROUTE);
+              }}
+            >
+              <Text style={styles.dialogPrimaryText}>Aceptar</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
 
       <Modal
         visible={
@@ -1767,6 +1927,7 @@ function FormInput({
   placeholder,
   keyboardType = "default",
   autoCapitalize = "sentences",
+  onFocus,
 }: {
   label:
     string;
@@ -1797,6 +1958,9 @@ function FormInput({
     | "sentences"
     | "words"
     | "characters";
+
+  onFocus?:
+    () => void;
 }) {
   return (
     <View
@@ -1828,6 +1992,9 @@ function FormInput({
         }
         autoCapitalize={
           autoCapitalize
+        }
+        onFocus={
+          onFocus
         }
         style={
           styles.input
@@ -1879,7 +2046,7 @@ const styles =
         20,
 
       paddingBottom:
-        50,
+        140,
     },
 
     backButton: {
@@ -2210,6 +2377,132 @@ const styles =
     pressed: {
       opacity:
         0.75,
+    },
+
+    dialogOverlay: {
+      flex: 1,
+      backgroundColor: "rgba(15,23,42,0.30)",
+      alignItems: "center",
+      justifyContent: "center",
+      padding: 24,
+    },
+
+    dialogCard: {
+      width: "100%",
+      maxWidth: 420,
+      borderRadius: 24,
+      backgroundColor: "#ffffff",
+      padding: 22,
+      borderWidth: 1,
+      borderColor: "#E5E7EB",
+    },
+
+    feedbackCard: {
+      width: "100%",
+      maxWidth: 420,
+      borderRadius: 24,
+      backgroundColor: "#ffffff",
+      padding: 24,
+      borderWidth: 1,
+      borderColor: "#E5E7EB",
+      alignItems: "center",
+    },
+
+    dialogIconWrap: {
+      width: 42,
+      height: 42,
+      borderRadius: 21,
+      backgroundColor: "#EFF6FF",
+      alignItems: "center",
+      justifyContent: "center",
+      marginBottom: 16,
+    },
+
+    dialogIcon: {
+      color: "#2563EB",
+      fontSize: 22,
+      fontWeight: "800",
+    },
+
+    successCircle: {
+      width: 52,
+      height: 52,
+      borderRadius: 26,
+      backgroundColor: "#ECFDF3",
+      borderWidth: 1,
+      borderColor: "#A7DDB8",
+      alignItems: "center",
+      justifyContent: "center",
+      marginBottom: 16,
+    },
+
+    successCheck: {
+      color: "#258044",
+      fontSize: 27,
+      fontWeight: "800",
+    },
+
+    dialogTitle: {
+      color: "#0F172A",
+      fontSize: 22,
+      fontWeight: "800",
+      textAlign: "center",
+    },
+
+    dialogMessage: {
+      marginTop: 9,
+      color: "#64748B",
+      fontSize: 15,
+      lineHeight: 21,
+      textAlign: "center",
+    },
+
+    dialogActions: {
+      flexDirection: "row",
+      gap: 10,
+      marginTop: 22,
+    },
+
+    dialogSecondary: {
+      flex: 1,
+      height: 48,
+      borderRadius: 14,
+      borderWidth: 1,
+      borderColor: "#CBD5E1",
+      alignItems: "center",
+      justifyContent: "center",
+      backgroundColor: "#ffffff",
+    },
+
+    dialogSecondaryText: {
+      color: "#475569",
+      fontSize: 15,
+      fontWeight: "700",
+    },
+
+    dialogPrimary: {
+      flex: 1,
+      height: 48,
+      borderRadius: 14,
+      backgroundColor: "#0F172A",
+      alignItems: "center",
+      justifyContent: "center",
+    },
+
+    feedbackButton: {
+      alignSelf: "stretch",
+      height: 48,
+      marginTop: 22,
+      borderRadius: 14,
+      backgroundColor: "#0F172A",
+      alignItems: "center",
+      justifyContent: "center",
+    },
+
+    dialogPrimaryText: {
+      color: "#ffffff",
+      fontSize: 15,
+      fontWeight: "800",
     },
 
     modalBackdrop: {

@@ -43,6 +43,12 @@ const LOGIN_ROUTE =
 const FLETES_ROUTE =
   "/fletes" as Href;
 
+const AUDITORIA_ROUTE =
+  "/auditoria" as Href;
+
+const USUARIOS_ROUTE =
+  "/gestion-usuarios" as Href;
+
 export default function DashboardScreen() {
   const [
     loading,
@@ -200,6 +206,10 @@ export default function DashboardScreen() {
     profile.role ===
       "superuser";
 
+  const isSuperuser =
+    profile.role ===
+    "superuser";
+
   return (
     <SafeAreaView
       style={
@@ -243,13 +253,31 @@ export default function DashboardScreen() {
             styles.infoCard
           }
         >
-          <Text
-            style={
-              styles.infoLabel
-            }
-          >
-            USUARIO
-          </Text>
+          <View
+  style={
+    styles.userHeader
+  }
+>
+  <Text
+    style={
+      styles.infoLabel
+    }
+  >
+    USUARIO
+  </Text>
+
+  <Text
+    style={
+      styles.userRole
+    }
+  >
+    {profile.role === "superuser"
+      ? "Superusuario"
+      : profile.role === "editor"
+        ? "Editor"
+        : "Lector"}
+  </Text>
+</View>
 
           <Text
             style={
@@ -269,34 +297,6 @@ export default function DashboardScreen() {
           </Text>
         </View>
 
-        <View
-          style={
-            styles.infoCard
-          }
-        >
-          <Text
-            style={
-              styles.infoLabel
-            }
-          >
-            NIVEL DE ACCESO
-          </Text>
-
-          <Text
-            style={
-              styles.infoTitle
-            }
-          >
-            {profile.role ===
-            "superuser"
-              ? "Superusuario"
-              : profile.role ===
-                  "editor"
-                ? "Editor"
-                : "Lector"}
-          </Text>
-        </View>
-
         <Text
           style={
             styles.sectionTitle
@@ -311,30 +311,44 @@ export default function DashboardScreen() {
               FLETES_ROUTE
             )
           }
-          style={({
-            pressed,
-          }) => [
+          style={({ pressed }) => [
             styles.moduleCard,
 
             pressed &&
               styles.cardPressed,
           ]}
         >
-          <Text
+          <View
             style={
-              styles.moduleEyebrow
+              styles.moduleHeader
             }
           >
-            Operación
-          </Text>
+            <View>
+              <Text
+                style={
+                  styles.moduleEyebrow
+                }
+              >
+                Operación
+              </Text>
 
-          <Text
-            style={
-              styles.moduleTitle
-            }
-          >
-            Relación de Fletes
-          </Text>
+              <Text
+                style={
+                  styles.moduleTitle
+                }
+              >
+                Relación de Fletes
+              </Text>
+            </View>
+
+            <Text
+              style={
+                styles.arrow
+              }
+            >
+              ›
+            </Text>
+          </View>
 
           <Text
             style={
@@ -357,70 +371,100 @@ export default function DashboardScreen() {
           )}
         </Pressable>
 
-        {profile.role ===
-          "superuser" && (
+        {isSuperuser && (
           <>
-            <View
-              style={
-                styles.moduleCard
+            <Pressable
+              onPress={() =>
+                router.push(
+                  AUDITORIA_ROUTE
+                )
               }
-            >
-              <Text
-                style={
-                  styles.moduleEyebrow
-                }
-              >
-                Administración
-              </Text>
+              style={({
+                pressed,
+              }) => [
+                styles.moduleCard,
 
-              <Text
+                pressed &&
+                  styles.cardPressed,
+              ]}
+            >
+              <View
                 style={
-                  styles.moduleTitle
+                  styles.moduleHeader
                 }
               >
-                Gestión de usuarios
-              </Text>
+                <View
+                  style={
+                    styles.moduleHeaderText
+                  }
+                >
+                  <Text
+                    style={
+                      styles.moduleEyebrow
+                    }
+                  >
+                    Administración
+                  </Text>
+
+                  <Text
+                    style={
+                      styles.moduleTitle
+                    }
+                  >
+                    Auditoría
+                  </Text>
+                </View>
+
+                <Text
+                  style={
+                    styles.arrow
+                  }
+                >
+                  ›
+                </Text>
+              </View>
 
               <Text
                 style={
                   styles.moduleText
                 }
               >
-                Próximamente en la app
-                móvil.
+                Consulta quién creó,
+                modificó o eliminó
+                información dentro del
+                sistema.
               </Text>
-            </View>
 
-            <View
-              style={
-                styles.moduleCard
+              <Text
+                style={
+                  styles.permission
+                }
+              >
+                Disponible únicamente
+                para superusuarios.
+              </Text>
+            </Pressable>
+
+            <Pressable
+              onPress={() =>
+                router.push(
+                  USUARIOS_ROUTE
+                )
               }
+              style={({ pressed }) => [
+                styles.moduleCard,
+                pressed && styles.cardPressed,
+              ]}
             >
-              <Text
-                style={
-                  styles.moduleEyebrow
-                }
-              >
-                Administración
-              </Text>
-
-              <Text
-                style={
-                  styles.moduleTitle
-                }
-              >
-                Auditoría
-              </Text>
-
-              <Text
-                style={
-                  styles.moduleText
-                }
-              >
-                Próximamente en la app
-                móvil.
-              </Text>
-            </View>
+              <View style={styles.moduleHeader}>
+                <View style={styles.moduleHeaderText}>
+                  <Text style={styles.moduleEyebrow}>Administración</Text>
+                  <Text style={styles.moduleTitle}>Gestión de usuarios</Text>
+                </View>
+                <Text style={styles.arrow}>›</Text>
+              </View>
+              <Text style={styles.moduleText}>Administra usuarios, roles y accesos.</Text>
+            </Pressable>
           </>
         )}
 
@@ -428,9 +472,7 @@ export default function DashboardScreen() {
           onPress={() =>
             void logout()
           }
-          style={({
-            pressed,
-          }) => [
+          style={({ pressed }) => [
             styles.logoutButton,
 
             pressed &&
@@ -574,6 +616,18 @@ const styles =
         "800",
     },
 
+    userHeader: {
+  flexDirection: "row",
+  alignItems: "center",
+  justifyContent: "space-between",
+},
+
+userRole: {
+  color: "#2563eb",
+  fontSize: 13,
+  fontWeight: "700",
+},
+
     moduleCard: {
       marginBottom: 14,
 
@@ -588,6 +642,23 @@ const styles =
         "#ffffff",
 
       padding: 20,
+    },
+
+    moduleHeader: {
+      flexDirection:
+        "row",
+
+      alignItems:
+        "center",
+
+      justifyContent:
+        "space-between",
+    },
+
+    moduleHeaderText: {
+      flex: 1,
+
+      paddingRight: 12,
     },
 
     moduleEyebrow: {
@@ -630,6 +701,16 @@ const styles =
         "#64748b",
 
       fontSize: 12,
+    },
+
+    arrow: {
+      color:
+        "#94a3b8",
+
+      fontSize: 30,
+
+      fontWeight:
+        "300",
     },
 
     logoutButton: {
