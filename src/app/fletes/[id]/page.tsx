@@ -2,6 +2,7 @@
 
 import {
   FormEvent,
+  ReactNode,
   use,
   useEffect,
   useMemo,
@@ -42,6 +43,29 @@ type CatalogOption = {
   value: string;
   label: string;
   active: boolean;
+  sort_order: number;
+};
+
+type MainColumnSetting = {
+  column_key: string;
+  label: string;
+  visible: boolean;
+  sort_order: number;
+};
+
+type CustomFieldType =
+  | "text"
+  | "number"
+  | "date"
+  | "boolean";
+
+type CustomFieldDefinition = {
+  id: string;
+  field_key: string;
+  label: string;
+  field_type: CustomFieldType;
+  visible: boolean;
+  required: boolean;
   sort_order: number;
 };
 
@@ -101,6 +125,105 @@ type FormState = {
   observations: string;
 };
 
+type CustomFieldValues =
+  Record<string, string>;
+
+const FALLBACK_MAIN_COLUMNS:
+  MainColumnSetting[] = [
+    {
+      column_key: "service_date",
+      label: "Fecha",
+      visible: true,
+      sort_order: 10,
+    },
+    {
+      column_key: "unit",
+      label: "Unidad",
+      visible: true,
+      sort_order: 20,
+    },
+    {
+      column_key: "invoice",
+      label: "Factura",
+      visible: true,
+      sort_order: 30,
+    },
+    {
+      column_key: "client",
+      label: "Cliente",
+      visible: true,
+      sort_order: 40,
+    },
+    {
+      column_key: "service_type",
+      label: "Tipo",
+      visible: true,
+      sort_order: 50,
+    },
+    {
+      column_key: "category",
+      label: "Categoría",
+      visible: true,
+      sort_order: 60,
+    },
+    {
+      column_key: "container",
+      label: "Contenedor",
+      visible: true,
+      sort_order: 70,
+    },
+    {
+      column_key: "weight",
+      label: "Peso",
+      visible: true,
+      sort_order: 80,
+    },
+    {
+      column_key: "destination",
+      label: "Destino",
+      visible: true,
+      sort_order: 90,
+    },
+    {
+      column_key: "rodrigo_cash_freight",
+      label: "Flete Rodrigo",
+      visible: true,
+      sort_order: 100,
+    },
+    {
+      column_key: "invoice_freight",
+      label: "Flete factura",
+      visible: true,
+      sort_order: 110,
+    },
+    {
+      column_key: "carlos_cash_advance",
+      label: "Anticipo Carlos",
+      visible: true,
+      sort_order: 120,
+    },
+    {
+      column_key: "carlos_invoice_payment",
+      label: "Pago Carlos",
+      visible: true,
+      sort_order: 130,
+    },
+    {
+      column_key: "observations",
+      label: "Observaciones",
+      visible: true,
+      sort_order: 140,
+    },
+  ];
+
+const EDITABLE_MAIN_KEYS =
+  new Set(
+    FALLBACK_MAIN_COLUMNS.map(
+      (column) =>
+        column.column_key
+    )
+  );
+
 function optionalNumber(
   value: string
 ): number | null {
@@ -121,6 +244,78 @@ function optionalNumber(
   )
     ? parsed
     : null;
+}
+
+function customValueToString(
+  value: unknown,
+  type: CustomFieldType
+) {
+  if (
+    value === null ||
+    value === undefined
+  ) {
+    return "";
+  }
+
+  if (type === "boolean") {
+    if (
+      value === true ||
+      value === "true" ||
+      value === 1 ||
+      value === "1"
+    ) {
+      return "true";
+    }
+
+    if (
+      value === false ||
+      value === "false" ||
+      value === 0 ||
+      value === "0"
+    ) {
+      return "false";
+    }
+
+    return "";
+  }
+
+  return String(value);
+}
+
+function normalizeCustomValue(
+  value: string,
+  type: CustomFieldType
+): string | number | boolean | null {
+  const trimmed =
+    value.trim();
+
+  if (!trimmed) {
+    return null;
+  }
+
+  if (type === "number") {
+    return optionalNumber(
+      trimmed
+    );
+  }
+
+  if (type === "boolean") {
+    if (
+      trimmed === "true"
+    ) {
+      return true;
+    }
+
+    if (
+      trimmed === "false"
+    ) {
+      return false;
+    }
+
+    return null;
+  }
+
+  return value;
 }
 
 export default function EditarFletePage({
@@ -167,6 +362,30 @@ export default function EditarFletePage({
     useState<
       CatalogOption[]
     >([]);
+
+  const [
+    mainColumns,
+    setMainColumns,
+  ] =
+    useState<
+      MainColumnSetting[]
+    >([]);
+
+  const [
+    customFieldDefinitions,
+    setCustomFieldDefinitions,
+  ] =
+    useState<
+      CustomFieldDefinition[]
+    >([]);
+
+  const [
+    customFieldValues,
+    setCustomFieldValues,
+  ] =
+    useState<CustomFieldValues>(
+      {}
+    );
 
   const [
     loading,
@@ -306,6 +525,8 @@ export default function EditarFletePage({
         const [
           freightResult,
           catalogResult,
+          mainColumnsResult,
+          customFieldsResult,
         ] =
           await Promise.all([
             supabase
@@ -351,6 +572,49 @@ export default function EditarFletePage({
                     true,
                 }
               ),
+
+            supabase
+              .from(
+                "freight_column_settings"
+              )
+              .select(
+                `
+                column_key,
+                label,
+                visible,
+                sort_order
+                `
+              )
+              .order(
+                "sort_order",
+                {
+                  ascending:
+                    true,
+                }
+              ),
+
+            supabase
+              .from(
+                "freight_custom_fields"
+              )
+              .select(
+                `
+                id,
+                field_key,
+                label,
+                field_type,
+                visible,
+                required,
+                sort_order
+                `
+              )
+              .order(
+                "sort_order",
+                {
+                  ascending:
+                    true,
+                }
+              ),
           ]);
 
         if (
@@ -368,12 +632,40 @@ export default function EditarFletePage({
           throw catalogResult.error;
         }
 
+        if (
+          mainColumnsResult.error
+        ) {
+          throw new Error(
+            `No se pudo cargar la configuración de campos: ${mainColumnsResult.error.message}`
+          );
+        }
+
+        if (
+          customFieldsResult.error
+        ) {
+          throw new Error(
+            `No se pudieron cargar los campos personalizados: ${customFieldsResult.error.message}`
+          );
+        }
+
         if (!mounted) {
           return;
         }
 
-       const service: FreightService =
-  freightResult.data as FreightService;
+        const service =
+          freightResult.data as FreightService;
+
+        const loadedMainColumns =
+          (
+            mainColumnsResult.data ??
+            []
+          ) as MainColumnSetting[];
+
+        const loadedCustomFields =
+          (
+            customFieldsResult.data ??
+            []
+          ) as CustomFieldDefinition[];
 
         setProfile(
           profileData
@@ -388,6 +680,39 @@ export default function EditarFletePage({
             catalogResult.data ??
             []
           ) as CatalogOption[]
+        );
+
+        setMainColumns(
+          loadedMainColumns.length
+            ? loadedMainColumns
+            : FALLBACK_MAIN_COLUMNS
+        );
+
+        setCustomFieldDefinitions(
+          loadedCustomFields
+        );
+
+        const initialCustomValues:
+          CustomFieldValues = {};
+
+        for (
+          const field
+          of loadedCustomFields
+        ) {
+          initialCustomValues[
+            field.field_key
+          ] =
+            customValueToString(
+              service
+                .custom_fields?.[
+                  field.field_key
+                ],
+              field.field_type
+            );
+        }
+
+        setCustomFieldValues(
+          initialCustomValues
         );
 
         setForm({
@@ -492,6 +817,51 @@ export default function EditarFletePage({
     supabase,
   ]);
 
+  const visibleMainColumns =
+    useMemo(
+      () =>
+        mainColumns
+          .filter(
+            (column) =>
+              column.visible &&
+              EDITABLE_MAIN_KEYS.has(
+                column.column_key
+              )
+          )
+          .sort(
+            (
+              a,
+              b
+            ) =>
+              a.sort_order -
+              b.sort_order
+          ),
+      [
+        mainColumns,
+      ]
+    );
+
+  const visibleCustomFields =
+    useMemo(
+      () =>
+        customFieldDefinitions
+          .filter(
+            (field) =>
+              field.visible
+          )
+          .sort(
+            (
+              a,
+              b
+            ) =>
+              a.sort_order -
+              b.sort_order
+          ),
+      [
+        customFieldDefinitions,
+      ]
+    );
+
   function updateForm(
     key:
       keyof FormState,
@@ -506,6 +876,22 @@ export default function EditarFletePage({
         ...previous,
 
         [key]:
+          value,
+      })
+    );
+  }
+
+  function updateCustomField(
+    fieldKey: string,
+    value: string
+  ) {
+    setCustomFieldValues(
+      (
+        previous
+      ) => ({
+        ...previous,
+
+        [fieldKey]:
           value,
       })
     );
@@ -570,11 +956,119 @@ export default function EditarFletePage({
     return filtered;
   }
 
+  function validateForm() {
+    if (
+      !form.service_date
+    ) {
+      return "La fecha es obligatoria.";
+    }
+
+    const numberFields: Array<{
+      label: string;
+      value: string;
+    }> = [
+      {
+        label: "Peso",
+        value: form.weight,
+      },
+      {
+        label:
+          "Flete Rodrigo",
+        value:
+          form.rodrigo_cash_freight,
+      },
+      {
+        label:
+          "Flete factura",
+        value:
+          form.invoice_freight,
+      },
+      {
+        label:
+          "Anticipo Carlos",
+        value:
+          form.carlos_cash_advance,
+      },
+      {
+        label:
+          "Pago Carlos",
+        value:
+          form.carlos_invoice_payment,
+      },
+    ];
+
+    for (
+      const field
+      of numberFields
+    ) {
+      if (
+        field.value.trim() &&
+        optionalNumber(
+          field.value
+        ) === null
+      ) {
+        return `${field.label} debe contener un número válido.`;
+      }
+    }
+
+    for (
+      const field
+      of customFieldDefinitions
+    ) {
+      const value =
+        customFieldValues[
+          field.field_key
+        ] ?? "";
+
+      if (
+        field.required &&
+        !value.trim()
+      ) {
+        return `${field.label} es obligatorio.`;
+      }
+
+      if (
+        field.field_type ===
+          "number" &&
+        value.trim() &&
+        optionalNumber(
+          value
+        ) === null
+      ) {
+        return `${field.label} debe contener un número válido.`;
+      }
+    }
+
+    return "";
+  }
+
   function requestSave(
     event:
       FormEvent
   ) {
     event.preventDefault();
+
+    const validationError =
+      validateForm();
+
+    if (
+      validationError
+    ) {
+      setErrorMessage(
+        validationError
+      );
+
+      window.scrollTo({
+        top: 0,
+        behavior: "smooth",
+      });
+
+      return;
+    }
+
+    setErrorMessage(
+      ""
+    );
 
     setConfirmOpen(
       true
@@ -610,6 +1104,35 @@ export default function EditarFletePage({
         );
 
         return;
+      }
+
+      const normalizedCustomFields:
+        Record<
+          string,
+          string | number | boolean | null
+        > = {
+          ...(
+            freight?.custom_fields ??
+            {}
+          ),
+        } as Record<
+          string,
+          string | number | boolean | null
+        >;
+
+      for (
+        const field
+        of customFieldDefinitions
+      ) {
+        normalizedCustomFields[
+          field.field_key
+        ] =
+          normalizeCustomValue(
+            customFieldValues[
+              field.field_key
+            ] ?? "",
+            field.field_type
+          );
       }
 
       const response =
@@ -680,6 +1203,9 @@ export default function EditarFletePage({
 
                 observations:
                   form.observations,
+
+                custom_fields:
+                  normalizedCustomFields,
               }),
           }
         );
@@ -699,8 +1225,8 @@ export default function EditarFletePage({
               )
             : {};
       } catch {
-        // Si el servidor devuelve HTML
-        // u otro contenido inesperado.
+        // El servidor puede devolver
+        // otro contenido inesperado.
       }
 
       if (
@@ -744,6 +1270,479 @@ export default function EditarFletePage({
         false
       );
     }
+  }
+
+  function renderMainField(
+    column:
+      MainColumnSetting
+  ): ReactNode {
+    const label =
+      column.label;
+
+    switch (
+      column.column_key
+    ) {
+      case "service_date":
+        return (
+          <Field
+            key={
+              column.column_key
+            }
+            label={
+              label
+            }
+          >
+            <input
+              type="date"
+              value={
+                form.service_date
+              }
+              onChange={(event) =>
+                updateForm(
+                  "service_date",
+                  event.target.value
+                )
+              }
+              className={
+                inputClass
+              }
+              required
+            />
+          </Field>
+        );
+
+      case "unit":
+        return (
+          <CatalogField
+            key={
+              column.column_key
+            }
+            label={
+              label
+            }
+            value={
+              form.unit
+            }
+            options={getCatalogOptions(
+              "UNIT",
+              form.unit
+            )}
+            placeholder={`Seleccionar ${label.toLowerCase()}`}
+            onChange={(value) =>
+              updateForm(
+                "unit",
+                value
+              )
+            }
+          />
+        );
+
+      case "invoice":
+        return (
+          <Field
+            key={
+              column.column_key
+            }
+            label={
+              label
+            }
+          >
+            <input
+              type="text"
+              value={
+                form.invoice
+              }
+              onChange={(event) =>
+                updateForm(
+                  "invoice",
+                  event.target.value
+                )
+              }
+              className={
+                inputClass
+              }
+            />
+          </Field>
+        );
+
+      case "client":
+        return (
+          <CatalogField
+            key={
+              column.column_key
+            }
+            label={
+              label
+            }
+            value={
+              form.client
+            }
+            options={getCatalogOptions(
+              "CLIENT",
+              form.client
+            )}
+            placeholder={`Seleccionar ${label.toLowerCase()}`}
+            onChange={(value) =>
+              updateForm(
+                "client",
+                value
+              )
+            }
+          />
+        );
+
+      case "service_type":
+        return (
+          <CatalogField
+            key={
+              column.column_key
+            }
+            label={
+              label
+            }
+            value={
+              form.service_type
+            }
+            options={getCatalogOptions(
+              "SERVICE_TYPE",
+              form.service_type
+            )}
+            placeholder={`Seleccionar ${label.toLowerCase()}`}
+            onChange={(value) =>
+              updateForm(
+                "service_type",
+                value
+              )
+            }
+          />
+        );
+
+      case "category":
+        return (
+          <CatalogField
+            key={
+              column.column_key
+            }
+            label={
+              label
+            }
+            value={
+              form.category
+            }
+            options={getCatalogOptions(
+              "CATEGORY",
+              form.category
+            )}
+            placeholder={`Seleccionar ${label.toLowerCase()}`}
+            onChange={(value) =>
+              updateForm(
+                "category",
+                value
+              )
+            }
+          />
+        );
+
+      case "container":
+        return (
+          <Field
+            key={
+              column.column_key
+            }
+            label={
+              label
+            }
+          >
+            <input
+              type="text"
+              value={
+                form.container
+              }
+              onChange={(event) =>
+                updateForm(
+                  "container",
+                  event.target.value
+                )
+              }
+              className={
+                inputClass
+              }
+            />
+          </Field>
+        );
+
+      case "weight":
+        return (
+          <Field
+            key={
+              column.column_key
+            }
+            label={
+              label
+            }
+          >
+            <input
+              type="number"
+              step="any"
+              value={
+                form.weight
+              }
+              onChange={(event) =>
+                updateForm(
+                  "weight",
+                  event.target.value
+                )
+              }
+              className={
+                inputClass
+              }
+            />
+          </Field>
+        );
+
+      case "destination":
+        return (
+          <CatalogField
+            key={
+              column.column_key
+            }
+            label={
+              label
+            }
+            value={
+              form.destination
+            }
+            options={getCatalogOptions(
+              "DESTINATION",
+              form.destination
+            )}
+            placeholder={`Seleccionar ${label.toLowerCase()}`}
+            onChange={(value) =>
+              updateForm(
+                "destination",
+                value
+              )
+            }
+          />
+        );
+
+      case "rodrigo_cash_freight":
+        return (
+          <NumberField
+            key={
+              column.column_key
+            }
+            label={
+              label
+            }
+            value={
+              form.rodrigo_cash_freight
+            }
+            onChange={(value) =>
+              updateForm(
+                "rodrigo_cash_freight",
+                value
+              )
+            }
+          />
+        );
+
+      case "invoice_freight":
+        return (
+          <NumberField
+            key={
+              column.column_key
+            }
+            label={
+              label
+            }
+            value={
+              form.invoice_freight
+            }
+            onChange={(value) =>
+              updateForm(
+                "invoice_freight",
+                value
+              )
+            }
+          />
+        );
+
+      case "carlos_cash_advance":
+        return (
+          <NumberField
+            key={
+              column.column_key
+            }
+            label={
+              label
+            }
+            value={
+              form.carlos_cash_advance
+            }
+            onChange={(value) =>
+              updateForm(
+                "carlos_cash_advance",
+                value
+              )
+            }
+          />
+        );
+
+      case "carlos_invoice_payment":
+        return (
+          <NumberField
+            key={
+              column.column_key
+            }
+            label={
+              label
+            }
+            value={
+              form.carlos_invoice_payment
+            }
+            onChange={(value) =>
+              updateForm(
+                "carlos_invoice_payment",
+                value
+              )
+            }
+          />
+        );
+
+      case "observations":
+        return (
+          <div
+            key={
+              column.column_key
+            }
+            className="md:col-span-2 xl:col-span-3"
+          >
+            <Field
+              label={
+                label
+              }
+            >
+              <textarea
+                rows={4}
+                value={
+                  form.observations
+                }
+                onChange={(event) =>
+                  updateForm(
+                    "observations",
+                    event.target.value
+                  )
+                }
+                className={`${inputClass} min-h-28 resize-y`}
+              />
+            </Field>
+          </div>
+        );
+
+      default:
+        return null;
+    }
+  }
+
+  function renderCustomField(
+    field:
+      CustomFieldDefinition
+  ) {
+    const value =
+      customFieldValues[
+        field.field_key
+      ] ?? "";
+
+    if (
+      field.field_type ===
+        "boolean"
+    ) {
+      return (
+        <Field
+          key={
+            field.id
+          }
+          label={
+            field.label
+          }
+        >
+          <select
+            value={
+              value
+            }
+            onChange={(event) =>
+              updateCustomField(
+                field.field_key,
+                event.target.value
+              )
+            }
+            required={
+              field.required
+            }
+            className={
+              inputClass
+            }
+          >
+            <option value="">
+              Seleccionar
+            </option>
+
+            <option value="true">
+              Sí
+            </option>
+
+            <option value="false">
+              No
+            </option>
+          </select>
+        </Field>
+      );
+    }
+
+    return (
+      <Field
+        key={
+          field.id
+        }
+        label={
+          field.label
+        }
+      >
+        <input
+          type={
+            field.field_type ===
+              "number"
+              ? "number"
+              : field.field_type ===
+                  "date"
+                ? "date"
+                : "text"
+          }
+          step={
+            field.field_type ===
+              "number"
+              ? "any"
+              : undefined
+          }
+          value={
+            value
+          }
+          onChange={(event) =>
+            updateCustomField(
+              field.field_key,
+              event.target.value
+            )
+          }
+          required={
+            field.required
+          }
+          className={
+            inputClass
+          }
+        />
+      </Field>
+    );
   }
 
   if (loading) {
@@ -836,263 +1835,23 @@ export default function EditarFletePage({
           className="overflow-hidden rounded-2xl border bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900"
         >
           <div className="grid gap-5 p-6 md:grid-cols-2 xl:grid-cols-3">
-            <Field label="Fecha">
-              <input
-                type="date"
-                value={
-                  form.service_date
-                }
-                onChange={(event) =>
-                  updateForm(
-                    "service_date",
-                    event.target.value
-                  )
-                }
-                className={
-                  inputClass
-                }
-                required
-              />
-            </Field>
-
-            <CatalogField
-              label="Unidad"
-              value={
-                form.unit
-              }
-              options={getCatalogOptions(
-                "UNIT",
-                form.unit
-              )}
-              placeholder="Seleccionar unidad"
-              onChange={(value) =>
-                updateForm(
-                  "unit",
-                  value
+            {visibleMainColumns.map(
+              (
+                column
+              ) =>
+                renderMainField(
+                  column
                 )
-              }
-            />
+            )}
 
-            <Field label="Factura">
-              <input
-                type="text"
-                value={
-                  form.invoice
-                }
-                onChange={(event) =>
-                  updateForm(
-                    "invoice",
-                    event.target.value
-                  )
-                }
-                className={
-                  inputClass
-                }
-              />
-            </Field>
-
-            <CatalogField
-              label="Cliente"
-              value={
-                form.client
-              }
-              options={getCatalogOptions(
-                "CLIENT",
-                form.client
-              )}
-              placeholder="Seleccionar cliente"
-              onChange={(value) =>
-                updateForm(
-                  "client",
-                  value
+            {visibleCustomFields.map(
+              (
+                field
+              ) =>
+                renderCustomField(
+                  field
                 )
-              }
-            />
-
-            <CatalogField
-              label="Tipo"
-              value={
-                form.service_type
-              }
-              options={getCatalogOptions(
-                "SERVICE_TYPE",
-                form.service_type
-              )}
-              placeholder="Seleccionar tipo"
-              onChange={(value) =>
-                updateForm(
-                  "service_type",
-                  value
-                )
-              }
-            />
-
-            <CatalogField
-              label="Categoría"
-              value={
-                form.category
-              }
-              options={getCatalogOptions(
-                "CATEGORY",
-                form.category
-              )}
-              placeholder="Seleccionar categoría"
-              onChange={(value) =>
-                updateForm(
-                  "category",
-                  value
-                )
-              }
-            />
-
-            <Field label="Contenedor">
-              <input
-                type="text"
-                value={
-                  form.container
-                }
-                onChange={(event) =>
-                  updateForm(
-                    "container",
-                    event.target.value
-                  )
-                }
-                className={
-                  inputClass
-                }
-              />
-            </Field>
-
-            <Field label="Peso">
-              <input
-                type="number"
-                step="any"
-                value={
-                  form.weight
-                }
-                onChange={(event) =>
-                  updateForm(
-                    "weight",
-                    event.target.value
-                  )
-                }
-                className={
-                  inputClass
-                }
-              />
-            </Field>
-
-            <CatalogField
-              label="Destino"
-              value={
-                form.destination
-              }
-              options={getCatalogOptions(
-                "DESTINATION",
-                form.destination
-              )}
-              placeholder="Seleccionar destino"
-              onChange={(value) =>
-                updateForm(
-                  "destination",
-                  value
-                )
-              }
-            />
-
-            <Field label="Flete Rodrigo">
-              <input
-                type="number"
-                step="any"
-                value={
-                  form.rodrigo_cash_freight
-                }
-                onChange={(event) =>
-                  updateForm(
-                    "rodrigo_cash_freight",
-                    event.target.value
-                  )
-                }
-                className={
-                  inputClass
-                }
-              />
-            </Field>
-
-            <Field label="Flete factura">
-              <input
-                type="number"
-                step="any"
-                value={
-                  form.invoice_freight
-                }
-                onChange={(event) =>
-                  updateForm(
-                    "invoice_freight",
-                    event.target.value
-                  )
-                }
-                className={
-                  inputClass
-                }
-              />
-            </Field>
-
-            <Field label="Anticipo Carlos">
-              <input
-                type="number"
-                step="any"
-                value={
-                  form.carlos_cash_advance
-                }
-                onChange={(event) =>
-                  updateForm(
-                    "carlos_cash_advance",
-                    event.target.value
-                  )
-                }
-                className={
-                  inputClass
-                }
-              />
-            </Field>
-
-            <Field label="Pago Carlos">
-              <input
-                type="number"
-                step="any"
-                value={
-                  form.carlos_invoice_payment
-                }
-                onChange={(event) =>
-                  updateForm(
-                    "carlos_invoice_payment",
-                    event.target.value
-                  )
-                }
-                className={
-                  inputClass
-                }
-              />
-            </Field>
-
-            <div className="md:col-span-2 xl:col-span-3">
-              <Field label="Observaciones">
-                <textarea
-                  rows={4}
-                  value={
-                    form.observations
-                  }
-                  onChange={(event) =>
-                    updateForm(
-                      "observations",
-                      event.target.value
-                    )
-                  }
-                  className={`${inputClass} min-h-28 resize-y`}
-                />
-              </Field>
-            </div>
+            )}
           </div>
 
           <div className="flex flex-col-reverse gap-3 border-t p-6 dark:border-slate-800 sm:flex-row sm:justify-end">
@@ -1202,7 +1961,7 @@ function Field({
   label: string;
 
   children:
-    React.ReactNode;
+    ReactNode;
 }) {
   return (
     <label>
@@ -1212,6 +1971,43 @@ function Field({
 
       {children}
     </label>
+  );
+}
+
+function NumberField({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange:
+    (
+      value: string
+    ) => void;
+}) {
+  return (
+    <Field
+      label={
+        label
+      }
+    >
+      <input
+        type="number"
+        step="any"
+        value={
+          value
+        }
+        onChange={(event) =>
+          onChange(
+            event.target.value
+          )
+        }
+        className={
+          inputClass
+        }
+      />
+    </Field>
   );
 }
 

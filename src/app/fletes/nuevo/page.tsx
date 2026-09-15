@@ -71,12 +71,21 @@ type FormState = {
   observations: string;
 };
 
-const initialForm: FormState = {
-  service_date:
-    new Date()
-      .toISOString()
-      .slice(0, 10),
+function localToday() {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(
+    now.getMonth() + 1
+  ).padStart(2, "0");
+  const day = String(
+    now.getDate()
+  ).padStart(2, "0");
 
+  return `${year}-${month}-${day}`;
+}
+
+const initialForm: FormState = {
+  service_date: localToday(),
   unit: "",
   invoice: "",
   client: "",
@@ -92,113 +101,147 @@ const initialForm: FormState = {
   observations: "",
 };
 
-function optionalNumber(
+function isValidDate(
   value: string
-): number | null {
+) {
   if (
-    value.trim() === ""
+    !/^\d{4}-\d{2}-\d{2}$/.test(
+      value
+    )
   ) {
+    return false;
+  }
+
+  const date = new Date(
+    `${value}T00:00:00`
+  );
+
+  return (
+    !Number.isNaN(
+      date.getTime()
+    ) &&
+    date
+      .toISOString()
+      .slice(0, 10) ===
+      value
+  );
+}
+
+function parseOptionalNumber(
+  value: string,
+  label: string,
+  {
+    nonNegative = false,
+  }: {
+    nonNegative?: boolean;
+  } = {}
+): number | null {
+  const normalized = value
+    .replace(/,/g, "")
+    .trim();
+
+  if (!normalized) {
     return null;
   }
 
-  const parsed =
-    Number(value);
+  const parsed = Number(
+    normalized
+  );
 
-  return Number.isFinite(
-    parsed
-  )
-    ? parsed
-    : null;
+  if (
+    !Number.isFinite(
+      parsed
+    )
+  ) {
+    throw new Error(
+      `El campo "${label}" debe contener un número válido.`
+    );
+  }
+
+  if (
+    nonNegative &&
+    parsed < 0
+  ) {
+    throw new Error(
+      `El campo "${label}" no puede ser negativo.`
+    );
+  }
+
+  return parsed;
 }
 
 export default function NuevoFletePage() {
-  const router =
-    useRouter();
+  const router = useRouter();
 
-  const supabase =
-    useMemo(
-      () => createClient(),
-      []
-    );
+  const supabase = useMemo(
+    () => createClient(),
+    []
+  );
 
   const [
     profile,
     setProfile,
-  ] =
-    useState<Profile | null>(
-      null
-    );
+  ] = useState<Profile | null>(
+    null
+  );
 
   const [
     form,
     setForm,
-  ] =
-    useState<FormState>(
-      initialForm
-    );
+  ] = useState<FormState>(
+    initialForm
+  );
 
   const [
     customFields,
     setCustomFields,
-  ] =
-    useState<CustomField[]>(
-      []
-    );
+  ] = useState<CustomField[]>(
+    []
+  );
 
   const [
     customValues,
     setCustomValues,
-  ] =
-    useState<
-      Record<
-        string,
-        string | boolean
-      >
-    >({});
+  ] = useState<
+    Record<
+      string,
+      string | boolean
+    >
+  >({});
 
   const [
     catalogOptions,
     setCatalogOptions,
-  ] =
-    useState<CatalogOption[]>(
-      []
-    );
+  ] = useState<CatalogOption[]>(
+    []
+  );
 
   const [
     loading,
     setLoading,
-  ] =
-    useState(true);
+  ] = useState(true);
 
   const [
     saving,
     setSaving,
-  ] =
-    useState(false);
+  ] = useState(false);
 
   const [
     confirmOpen,
     setConfirmOpen,
-  ] =
-    useState(false);
+  ] = useState(false);
 
   const [
     errorMessage,
     setErrorMessage,
-  ] =
-    useState("");
+  ] = useState("");
 
   const [
     successFolio,
     setSuccessFolio,
-  ] =
-    useState<string | null>(
-      null
-    );
-
-  // ============================================================
-  // CARGAR INFORMACIÓN
-  // ============================================================
+  ] = useState<string | null>(
+    null
+  );
 
   useEffect(() => {
     let mounted = true;
@@ -207,10 +250,6 @@ export default function NuevoFletePage() {
       try {
         setLoading(true);
         setErrorMessage("");
-
-        // ======================================================
-        // USUARIO
-        // ======================================================
 
         const {
           data: {
@@ -228,13 +267,8 @@ export default function NuevoFletePage() {
           router.replace(
             "/login"
           );
-
           return;
         }
-
-        // ======================================================
-        // PERFIL
-        // ======================================================
 
         const {
           data:
@@ -265,11 +299,9 @@ export default function NuevoFletePage() {
           !profileData.active
         ) {
           await supabase.auth.signOut();
-
           router.replace(
             "/login"
           );
-
           return;
         }
 
@@ -282,140 +314,110 @@ export default function NuevoFletePage() {
           router.replace(
             "/fletes"
           );
-
           return;
         }
 
-        // ======================================================
-        // CAMPOS PERSONALIZADOS
-        // ======================================================
+        const [
+          customResult,
+          catalogResult,
+        ] =
+          await Promise.all([
+            supabase
+              .from(
+                "freight_custom_fields"
+              )
+              .select(
+                `
+                id,
+                field_key,
+                label,
+                field_type,
+                visible,
+                required,
+                sort_order
+                `
+              )
+              .eq(
+                "visible",
+                true
+              )
+              .order(
+                "sort_order",
+                {
+                  ascending:
+                    true,
+                }
+              )
+              .order(
+                "created_at",
+                {
+                  ascending:
+                    true,
+                }
+              ),
 
-        const {
-          data:
-            customData,
-          error:
-            customError,
-        } =
-          await supabase
-            .from(
-              "freight_custom_fields"
-            )
-            .select(
-              `
-              id,
-              field_key,
-              label,
-              field_type,
-              visible,
-              required,
-              sort_order
-              `
-            )
-            .eq(
-              "visible",
-              true
-            )
-            .order(
-              "sort_order",
-              {
-                ascending:
-                  true,
-              }
-            )
-            .order(
-              "created_at",
-              {
-                ascending:
-                  true,
-              }
-            );
+            supabase
+              .from(
+                "freight_catalog_options"
+              )
+              .select(
+                `
+                id,
+                catalog_type,
+                value,
+                label,
+                active,
+                sort_order
+                `
+              )
+              .eq(
+                "active",
+                true
+              )
+              .order(
+                "catalog_type",
+                {
+                  ascending:
+                    true,
+                }
+              )
+              .order(
+                "sort_order",
+                {
+                  ascending:
+                    true,
+                }
+              )
+              .order(
+                "label",
+                {
+                  ascending:
+                    true,
+                }
+              ),
+          ]);
 
         if (
-          customError
+          customResult.error
         ) {
-          throw customError;
+          throw customResult.error;
         }
 
-        // ======================================================
-        // CATÁLOGOS
-        // ======================================================
-
-        const {
-          data:
-            catalogData,
-          error:
-            catalogError,
-        } =
-          await supabase
-            .from(
-              "freight_catalog_options"
-            )
-            .select(
-              `
-              id,
-              catalog_type,
-              value,
-              label,
-              active,
-              sort_order
-              `
-            )
-            .eq(
-              "active",
-              true
-            )
-            .order(
-              "catalog_type",
-              {
-                ascending:
-                  true,
-              }
-            )
-            .order(
-              "sort_order",
-              {
-                ascending:
-                  true,
-              }
-            )
-            .order(
-              "label",
-              {
-                ascending:
-                  true,
-              }
-            );
-
         if (
-          catalogError
+          catalogResult.error
         ) {
-          throw catalogError;
+          throw catalogResult.error;
         }
 
         if (!mounted) {
           return;
         }
 
-        setProfile(
-          profileData
-        );
-
         const fields =
-          (customData ??
-            []) as CustomField[];
-
-        setCustomFields(
-          fields
-        );
-
-        setCatalogOptions(
-          (catalogData ??
-            []) as CatalogOption[]
-        );
-
-        // ======================================================
-        // VALORES INICIALES DE CAMPOS PERSONALIZADOS
-        // ======================================================
+          (
+            customResult.data ??
+            []
+          ) as CustomField[];
 
         const initialCustom:
           Record<
@@ -435,25 +437,32 @@ export default function NuevoFletePage() {
           }
         );
 
+        setProfile(
+          profileData
+        );
+        setCustomFields(
+          fields
+        );
         setCustomValues(
           initialCustom
         );
-      } catch (error) {
-        console.error(
-          error
+        setCatalogOptions(
+          (
+            catalogResult.data ??
+            []
+          ) as CatalogOption[]
         );
+      } catch (error) {
+        console.error(error);
 
         setErrorMessage(
-          error instanceof
-          Error
+          error instanceof Error
             ? error.message
             : "No se pudo cargar el formulario."
         );
       } finally {
         if (mounted) {
-          setLoading(
-            false
-          );
+          setLoading(false);
         }
       }
     }
@@ -468,10 +477,6 @@ export default function NuevoFletePage() {
     supabase,
   ]);
 
-  // ============================================================
-  // CATÁLOGOS
-  // ============================================================
-
   function getCatalogOptions(
     catalogType:
       CatalogType
@@ -482,10 +487,6 @@ export default function NuevoFletePage() {
         catalogType
     );
   }
-
-  // ============================================================
-  // ACTUALIZAR FORMULARIO
-  // ============================================================
 
   function updateForm(
     field:
@@ -501,10 +502,10 @@ export default function NuevoFletePage() {
   }
 
   function updateCustomValue(
-    fieldKey:
-      string,
+    fieldKey: string,
     value:
-      string | boolean
+      | string
+      | boolean
   ) {
     setCustomValues(
       (previous) => ({
@@ -515,10 +516,6 @@ export default function NuevoFletePage() {
     );
   }
 
-  // ============================================================
-  // VALIDACIÓN
-  // ============================================================
-
   function validateForm() {
     if (
       !form.service_date.trim()
@@ -526,46 +523,109 @@ export default function NuevoFletePage() {
       return "La fecha del servicio es obligatoria.";
     }
 
-    for (
-      const field of
-      customFields
+    if (
+      !isValidDate(
+        form.service_date
+      )
     ) {
-      if (
-        !field.required
-      ) {
-        continue;
-      }
+      return "La fecha del servicio no es válida.";
+    }
 
-      if (
-        field.field_type ===
-        "boolean"
-      ) {
-        continue;
-      }
+    try {
+      parseOptionalNumber(
+        form.weight,
+        "Peso",
+        {
+          nonNegative: true,
+        }
+      );
 
-      const value =
-        customValues[
-          field.field_key
-        ];
+      parseOptionalNumber(
+        form.rodrigo_cash_freight,
+        "Flete Rodrigo",
+        {
+          nonNegative: true,
+        }
+      );
 
-      if (
-        value ===
-          undefined ||
-        value === null ||
-        String(
-          value
-        ).trim() === ""
+      parseOptionalNumber(
+        form.invoice_freight,
+        "Flete factura",
+        {
+          nonNegative: true,
+        }
+      );
+
+      parseOptionalNumber(
+        form.carlos_cash_advance,
+        "Anticipo Carlos",
+        {
+          nonNegative: true,
+        }
+      );
+
+      parseOptionalNumber(
+        form.carlos_invoice_payment,
+        "Pago Carlos",
+        {
+          nonNegative: true,
+        }
+      );
+
+      for (
+        const field of
+        customFields
       ) {
-        return `El campo "${field.label}" es obligatorio.`;
+        const value =
+          customValues[
+            field.field_key
+          ];
+
+        if (
+          field.required &&
+          field.field_type !==
+            "boolean" &&
+          String(
+            value ?? ""
+          ).trim() === ""
+        ) {
+          return `El campo "${field.label}" es obligatorio.`;
+        }
+
+        if (
+          field.field_type ===
+            "number" &&
+          String(
+            value ?? ""
+          ).trim()
+        ) {
+          parseOptionalNumber(
+            String(value),
+            field.label
+          );
+        }
+
+        if (
+          field.field_type ===
+            "date" &&
+          String(
+            value ?? ""
+          ).trim() &&
+          !isValidDate(
+            String(value)
+          )
+        ) {
+          return `El campo "${field.label}" contiene una fecha inválida.`;
+        }
       }
+    } catch (error) {
+      return error instanceof Error
+        ? error.message
+        : "Revisa los valores numéricos.";
     }
 
     return null;
   }
-
-  // ============================================================
-  // SOLICITAR GUARDADO
-  // ============================================================
 
   function requestSave(
     event:
@@ -576,23 +636,16 @@ export default function NuevoFletePage() {
     const validation =
       validateForm();
 
-    if (
-      validation
-    ) {
+    if (validation) {
       setErrorMessage(
         validation
       );
-
       return;
     }
 
     setErrorMessage("");
     setConfirmOpen(true);
   }
-
-  // ============================================================
-  // CREAR FLETE
-  // ============================================================
 
   async function saveFreight() {
     if (saving) {
@@ -602,10 +655,6 @@ export default function NuevoFletePage() {
     try {
       setSaving(true);
       setErrorMessage("");
-
-      // ======================================================
-      // SESIÓN
-      // ======================================================
 
       const {
         data: {
@@ -618,13 +667,8 @@ export default function NuevoFletePage() {
         router.replace(
           "/login"
         );
-
         return;
       }
-
-      // ======================================================
-      // CAMPOS PERSONALIZADOS
-      // ======================================================
 
       const normalizedCustom:
         Record<
@@ -646,11 +690,12 @@ export default function NuevoFletePage() {
             normalizedCustom[
               field.field_key
             ] =
-              value === ""
-                ? null
-                : Number(
-                    value
-                  );
+              parseOptionalNumber(
+                String(
+                  value ?? ""
+                ),
+                field.label
+              );
 
             return;
           }
@@ -661,126 +706,154 @@ export default function NuevoFletePage() {
         }
       );
 
-      // ======================================================
-      // API
-      // ======================================================
-
       const response =
         await fetch(
           "/api/fletes",
           {
             method:
               "POST",
-
             headers: {
               "Content-Type":
                 "application/json",
-
               Authorization:
                 `Bearer ${session.access_token}`,
             },
-
             body:
               JSON.stringify({
                 service_date:
-                  form.service_date,
-
+                  form.service_date.trim(),
                 unit:
-                  form.unit,
-
+                  form.unit.trim(),
                 invoice:
-                  form.invoice,
-
+                  form.invoice.trim(),
                 client:
-                  form.client,
-
+                  form.client.trim(),
                 service_type:
-                  form.service_type,
-
+                  form.service_type.trim(),
                 category:
-                  form.category,
-
+                  form.category.trim(),
                 container:
-                  form.container,
-
+                  form.container.trim(),
                 weight:
-                  optionalNumber(
-                    form.weight
+                  parseOptionalNumber(
+                    form.weight,
+                    "Peso",
+                    {
+                      nonNegative:
+                        true,
+                    }
                   ),
-
                 destination:
-                  form.destination,
-
+                  form.destination.trim(),
                 rodrigo_cash_freight:
-                  optionalNumber(
-                    form.rodrigo_cash_freight
-                  ),
-
+                  parseOptionalNumber(
+                    form.rodrigo_cash_freight,
+                    "Flete Rodrigo",
+                    {
+                      nonNegative:
+                        true,
+                    }
+                  ) ?? 0,
                 invoice_freight:
-                  optionalNumber(
-                    form.invoice_freight
-                  ),
-
+                  parseOptionalNumber(
+                    form.invoice_freight,
+                    "Flete factura",
+                    {
+                      nonNegative:
+                        true,
+                    }
+                  ) ?? 0,
                 carlos_cash_advance:
-                  optionalNumber(
-                    form.carlos_cash_advance
-                  ),
-
+                  parseOptionalNumber(
+                    form.carlos_cash_advance,
+                    "Anticipo Carlos",
+                    {
+                      nonNegative:
+                        true,
+                    }
+                  ) ?? 0,
                 carlos_invoice_payment:
-                  optionalNumber(
-                    form.carlos_invoice_payment
-                  ),
-
+                  parseOptionalNumber(
+                    form.carlos_invoice_payment,
+                    "Pago Carlos",
+                    {
+                      nonNegative:
+                        true,
+                    }
+                  ) ?? 0,
                 observations:
-                  form.observations,
-
+                  form.observations.trim(),
                 custom_fields:
                   normalizedCustom,
               }),
           }
         );
 
-      const data =
-        await response.json();
+      const responseText =
+        await response.text();
+
+      let data: {
+        error?: string;
+        folio?:
+          | string
+          | number;
+      } = {};
+
+      try {
+        data =
+          responseText
+            ? JSON.parse(
+                responseText
+              )
+            : {};
+      } catch {
+        // La API no devolvió JSON.
+      }
 
       if (
         !response.ok
       ) {
         throw new Error(
           data.error ??
-            "No se pudo crear el flete."
+            `No se pudo crear el flete. Error ${response.status}.`
         );
       }
 
-      // ======================================================
-      // ÉXITO
-      // ======================================================
-
       setConfirmOpen(false);
 
-      setSuccessFolio(
-        data.folio ??
-          "Flete creado"
-      );
+      const rawFolio =
+        data.folio;
 
-      window.setTimeout(
-        () => {
-          router.push(
-            "/fletes"
-          );
-        },
-        3000
+      const formattedFolio =
+        rawFolio ===
+          undefined ||
+        rawFolio === null
+          ? "Flete creado"
+          : String(
+              rawFolio
+            ).startsWith(
+              "F-"
+            )
+            ? String(
+                rawFolio
+              )
+            : `F-${String(
+                rawFolio
+              ).padStart(
+                4,
+                "0"
+              )}`;
+
+      setSuccessFolio(
+        formattedFolio
       );
     } catch (error) {
-      console.error(
-        error
-      );
+      console.error(error);
 
       setConfirmOpen(false);
 
       setErrorMessage(
-        error instanceof
-        Error
+        error instanceof Error
           ? error.message
           : "No se pudo guardar el flete."
       );
@@ -789,16 +862,11 @@ export default function NuevoFletePage() {
     }
   }
 
-  // ============================================================
-  // LOADING
-  // ============================================================
-
   if (loading) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-slate-50 dark:bg-slate-950">
+      <main className="flex min-h-screen items-center justify-center bg-[#f5f5f7] dark:bg-slate-950">
         <div className="text-center">
           <div className="mx-auto mb-4 h-9 w-9 animate-spin rounded-full border-4 border-slate-200 border-t-slate-900 dark:border-slate-700 dark:border-t-white" />
-
           <p className="text-sm text-slate-500 dark:text-slate-400">
             Cargando formulario...
           </p>
@@ -811,17 +879,9 @@ export default function NuevoFletePage() {
     return null;
   }
 
-  // ============================================================
-  // UI
-  // ============================================================
-
   return (
-    <main className="min-h-screen bg-slate-50 text-slate-900 transition-colors dark:bg-slate-950 dark:text-white">
-      {/* =======================================================
-          HEADER
-      ======================================================== */}
-
-      <header className="border-b border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
+    <main className="min-h-screen bg-[#f5f5f7] text-slate-900 transition-colors dark:bg-slate-950 dark:text-white">
+      <header className="border-b border-slate-200/80 bg-white/90 backdrop-blur dark:border-slate-800 dark:bg-slate-900/90">
         <div className="mx-auto flex max-w-7xl items-start justify-between gap-4 px-6 py-5">
           <div className="flex items-start gap-4">
             <button
@@ -831,24 +891,23 @@ export default function NuevoFletePage() {
                   "/fletes"
                 )
               }
-              className="mt-1 text-3xl leading-none text-slate-500 transition hover:-translate-x-1 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white"
-              title="Volver"
+              className="mt-1 text-3xl leading-none text-blue-600 transition hover:-translate-x-1 hover:text-blue-700 dark:text-blue-400"
+              aria-label="Volver a fletes"
             >
-              ←
+              ‹
             </button>
 
             <div>
-              <p className="text-sm font-medium text-blue-600 dark:text-blue-400">
+              <p className="text-sm font-semibold text-blue-600 dark:text-blue-400">
                 Relación de Fletes
               </p>
 
-              <h1 className="mt-1 text-3xl font-bold">
+              <h1 className="mt-1 text-3xl font-bold tracking-tight">
                 Nuevo flete
               </h1>
 
               <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                Captura la información
-                del nuevo servicio.
+                Captura la información del nuevo servicio.
               </p>
             </div>
           </div>
@@ -857,13 +916,12 @@ export default function NuevoFletePage() {
         </div>
       </header>
 
-      {/* =======================================================
-          CONTENIDO
-      ======================================================== */}
-
       <section className="mx-auto max-w-7xl px-6 py-7">
         {errorMessage && (
-          <div className="mb-5 rounded-xl border border-red-200 bg-red-50 px-5 py-4 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300">
+          <div
+            role="alert"
+            className="mb-5 rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-sm text-red-700 shadow-sm dark:border-red-900 dark:bg-red-950/30 dark:text-red-300"
+          >
             {errorMessage}
           </div>
         )}
@@ -872,28 +930,19 @@ export default function NuevoFletePage() {
           onSubmit={
             requestSave
           }
-          className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900"
+          className="overflow-hidden rounded-[24px] border border-slate-200/90 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900"
         >
-          {/* ===================================================
-              INFORMACIÓN
-          ==================================================== */}
-
           <div className="border-b border-slate-200 px-6 py-5 dark:border-slate-800">
             <h2 className="text-lg font-bold">
               Información del servicio
             </h2>
 
             <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-              Selecciona las opciones
-              correspondientes y
-              completa los datos del
-              servicio.
+              Completa los datos del servicio. Los campos de fecha abren el calendario del navegador.
             </p>
           </div>
 
           <div className="grid gap-5 p-6 md:grid-cols-2 xl:grid-cols-3">
-            {/* FECHA */}
-
             <Field
               label="Fecha"
               required
@@ -916,8 +965,6 @@ export default function NuevoFletePage() {
               />
             </Field>
 
-            {/* UNIDAD */}
-
             <Field label="Unidad">
               <CatalogSelect
                 value={
@@ -935,8 +982,6 @@ export default function NuevoFletePage() {
                 }
               />
             </Field>
-
-            {/* FACTURA */}
 
             <Field label="Factura">
               <input
@@ -956,8 +1001,6 @@ export default function NuevoFletePage() {
               />
             </Field>
 
-            {/* CLIENTE */}
-
             <Field label="Cliente">
               <CatalogSelect
                 value={
@@ -975,8 +1018,6 @@ export default function NuevoFletePage() {
                 }
               />
             </Field>
-
-            {/* TIPO */}
 
             <Field label="Tipo">
               <CatalogSelect
@@ -996,8 +1037,6 @@ export default function NuevoFletePage() {
               />
             </Field>
 
-            {/* CATEGORÍA */}
-
             <Field label="Categoría">
               <CatalogSelect
                 value={
@@ -1015,8 +1054,6 @@ export default function NuevoFletePage() {
                 }
               />
             </Field>
-
-            {/* CONTENEDOR */}
 
             <Field label="Contenedor">
               <input
@@ -1036,12 +1073,12 @@ export default function NuevoFletePage() {
               />
             </Field>
 
-            {/* PESO */}
-
             <Field label="Peso">
               <input
                 type="number"
+                min="0"
                 step="any"
+                inputMode="decimal"
                 value={
                   form.weight
                 }
@@ -1056,8 +1093,6 @@ export default function NuevoFletePage() {
                 }
               />
             </Field>
-
-            {/* DESTINO */}
 
             <Field label="Destino">
               <CatalogSelect
@@ -1076,134 +1111,100 @@ export default function NuevoFletePage() {
                 }
               />
             </Field>
-
-            {/* FLETE RODRIGO */}
-
-            <Field label="Flete Rodrigo">
-              <input
-                type="number"
-                step="any"
-                min="0"
-                value={
-                  form.rodrigo_cash_freight
-                }
-                onChange={(event) =>
-                  updateForm(
-                    "rodrigo_cash_freight",
-                    event.target.value
-                  )
-                }
-                className={
-                  inputClass
-                }
-              />
-            </Field>
-
-            {/* FLETE FACTURA */}
-
-            <Field label="Flete factura">
-              <input
-                type="number"
-                step="any"
-                min="0"
-                value={
-                  form.invoice_freight
-                }
-                onChange={(event) =>
-                  updateForm(
-                    "invoice_freight",
-                    event.target.value
-                  )
-                }
-                className={
-                  inputClass
-                }
-              />
-            </Field>
-
-            {/* ANTICIPO CARLOS */}
-
-            <Field label="Anticipo Carlos">
-              <input
-                type="number"
-                step="any"
-                min="0"
-                value={
-                  form.carlos_cash_advance
-                }
-                onChange={(event) =>
-                  updateForm(
-                    "carlos_cash_advance",
-                    event.target.value
-                  )
-                }
-                className={
-                  inputClass
-                }
-              />
-            </Field>
-
-            {/* PAGO CARLOS */}
-
-            <Field label="Pago Carlos">
-              <input
-                type="number"
-                step="any"
-                min="0"
-                value={
-                  form.carlos_invoice_payment
-                }
-                onChange={(event) =>
-                  updateForm(
-                    "carlos_invoice_payment",
-                    event.target.value
-                  )
-                }
-                className={
-                  inputClass
-                }
-              />
-            </Field>
-
-            {/* OBSERVACIONES */}
-
-            <div className="md:col-span-2 xl:col-span-3">
-              <Field label="Observaciones">
-                <textarea
-                  rows={4}
-                  value={
-                    form.observations
-                  }
-                  onChange={(event) =>
-                    updateForm(
-                      "observations",
-                      event.target.value
-                    )
-                  }
-                  className={
-                    inputClass
-                  }
-                />
-              </Field>
-            </div>
           </div>
 
-          {/* ===================================================
-              CAMPOS PERSONALIZADOS
-          ==================================================== */}
+          <div className="border-y border-slate-200 bg-slate-50/70 px-6 py-4 dark:border-slate-800 dark:bg-slate-950/40">
+            <h2 className="font-bold">
+              Importes
+            </h2>
+            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+              Los importes vacíos se guardan en $0.00.
+            </p>
+          </div>
+
+          <div className="grid gap-5 p-6 md:grid-cols-2 xl:grid-cols-4">
+            <MoneyInput
+              label="Flete Rodrigo"
+              value={
+                form.rodrigo_cash_freight
+              }
+              onChange={(value) =>
+                updateForm(
+                  "rodrigo_cash_freight",
+                  value
+                )
+              }
+            />
+
+            <MoneyInput
+              label="Flete factura"
+              value={
+                form.invoice_freight
+              }
+              onChange={(value) =>
+                updateForm(
+                  "invoice_freight",
+                  value
+                )
+              }
+            />
+
+            <MoneyInput
+              label="Anticipo Carlos"
+              value={
+                form.carlos_cash_advance
+              }
+              onChange={(value) =>
+                updateForm(
+                  "carlos_cash_advance",
+                  value
+                )
+              }
+            />
+
+            <MoneyInput
+              label="Pago Carlos"
+              value={
+                form.carlos_invoice_payment
+              }
+              onChange={(value) =>
+                updateForm(
+                  "carlos_invoice_payment",
+                  value
+                )
+              }
+            />
+          </div>
+
+          <div className="px-6 pb-6">
+            <Field label="Observaciones">
+              <textarea
+                rows={4}
+                value={
+                  form.observations
+                }
+                onChange={(event) =>
+                  updateForm(
+                    "observations",
+                    event.target.value
+                  )
+                }
+                placeholder="Agrega observaciones del servicio..."
+                className={`${inputClass} min-h-28 resize-y`}
+              />
+            </Field>
+          </div>
 
           {customFields.length >
             0 && (
             <>
-              <div className="border-y border-slate-200 bg-slate-50 px-6 py-4 dark:border-slate-800 dark:bg-slate-950/40">
+              <div className="border-y border-slate-200 bg-slate-50/70 px-6 py-4 dark:border-slate-800 dark:bg-slate-950/40">
                 <h2 className="font-bold">
                   Campos personalizados
                 </h2>
 
                 <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                  Información adicional
-                  configurada para los
-                  fletes.
+                  Información adicional configurada para los fletes.
                 </p>
               </div>
 
@@ -1237,11 +1238,7 @@ export default function NuevoFletePage() {
             </>
           )}
 
-          {/* ===================================================
-              BOTONES
-          ==================================================== */}
-
-          <div className="flex justify-end gap-3 border-t border-slate-200 px-6 py-5 dark:border-slate-800">
+          <div className="flex flex-col-reverse gap-3 border-t border-slate-200 px-6 py-5 sm:flex-row sm:justify-end dark:border-slate-800">
             <button
               type="button"
               disabled={
@@ -1252,7 +1249,7 @@ export default function NuevoFletePage() {
                   "/fletes"
                 )
               }
-              className="rounded-xl border border-slate-300 bg-white px-5 py-3 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+              className="rounded-xl border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
             >
               Cancelar
             </button>
@@ -1270,29 +1267,26 @@ export default function NuevoFletePage() {
         </form>
       </section>
 
-      {/* =======================================================
-          CONFIRMACIÓN
-      ======================================================== */}
-
       {confirmOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/55 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-7 text-center shadow-2xl dark:border-slate-800 dark:bg-slate-900">
-            <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-amber-100 text-xl font-bold text-amber-700 dark:bg-amber-950/50 dark:text-amber-300">
-              !
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/35 p-4 backdrop-blur-[2px]">
+          <div
+            role="dialog"
+            aria-modal="true"
+            className="w-full max-w-sm rounded-[26px] border border-white/60 bg-white p-6 shadow-[0_24px_70px_rgba(15,23,42,0.24)] dark:border-slate-800 dark:bg-slate-900"
+          >
+            <div className="mx-auto flex h-11 w-11 items-center justify-center rounded-full bg-blue-50 text-xl text-blue-600 dark:bg-blue-950/50 dark:text-blue-300">
+              ✓
             </div>
 
-            <h2 className="text-xl font-bold">
+            <h2 className="mt-4 text-center text-xl font-bold tracking-tight">
               ¿Guardar este flete?
             </h2>
 
-            <p className="mt-2 text-sm leading-6 text-slate-500 dark:text-slate-400">
-              Se creará un nuevo
-              registro y el movimiento
-              quedará registrado en
-              Auditoría.
+            <p className="mt-2 text-center text-sm leading-6 text-slate-500 dark:text-slate-400">
+              Se creará un nuevo registro y el movimiento quedará registrado en Auditoría.
             </p>
 
-            <div className="mt-6 flex justify-center gap-3">
+            <div className="mt-6 grid grid-cols-2 gap-3">
               <button
                 type="button"
                 disabled={
@@ -1303,7 +1297,7 @@ export default function NuevoFletePage() {
                     false
                   )
                 }
-                className="rounded-xl border border-slate-300 px-5 py-3 text-sm font-medium disabled:opacity-50 dark:border-slate-700"
+                className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
               >
                 Cancelar
               </button>
@@ -1316,7 +1310,7 @@ export default function NuevoFletePage() {
                 onClick={() =>
                   void saveFreight()
                 }
-                className="rounded-xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white disabled:opacity-50 dark:bg-white dark:text-slate-900"
+                className="rounded-xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-50 dark:bg-white dark:text-slate-900"
               >
                 {saving
                   ? "Guardando..."
@@ -1327,40 +1321,40 @@ export default function NuevoFletePage() {
         </div>
       )}
 
-      {/* =======================================================
-          ÉXITO
-      ======================================================== */}
-
       {successFolio && (
-        <div className="pointer-events-none fixed inset-0 z-[100] flex items-center justify-center p-4">
-          <div className="relative w-full max-w-md overflow-hidden rounded-2xl border border-emerald-200 bg-white p-7 text-center shadow-2xl dark:border-emerald-900 dark:bg-slate-900">
-            <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-emerald-100 font-bold text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300">
-              OK
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/20 p-4 backdrop-blur-[2px]">
+          <div
+            role="dialog"
+            aria-modal="true"
+            className="w-full max-w-sm rounded-[26px] border border-emerald-100 bg-white p-6 text-center shadow-[0_24px_70px_rgba(15,23,42,0.24)] dark:border-emerald-950 dark:bg-slate-900"
+          >
+            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full border border-emerald-200 bg-emerald-50 text-xl font-bold text-emerald-600 dark:border-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300">
+              ✓
             </div>
 
-            <h3 className="text-xl font-bold">
+            <h3 className="mt-4 text-xl font-bold tracking-tight">
               Flete creado
             </h3>
 
             <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
-              {successFolio} se
-              guardó correctamente.
+              {successFolio} se guardó correctamente.
             </p>
 
             <p className="mt-1 text-xs text-slate-400">
-              Movimiento registrado en
-              Auditoría.
+              Movimiento registrado en Auditoría.
             </p>
 
-            <div className="absolute bottom-0 left-0 h-1 w-full bg-slate-100 dark:bg-slate-800">
-              <div
-                className="h-full bg-emerald-500"
-                style={{
-                  animation:
-                    "toastProgress 3s linear forwards",
-                }}
-              />
-            </div>
+            <button
+              type="button"
+              onClick={() =>
+                router.push(
+                  "/fletes"
+                )
+              }
+              className="mt-6 w-full rounded-xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 dark:bg-white dark:text-slate-900"
+            >
+              Aceptar
+            </button>
           </div>
         </div>
       )}
@@ -1368,19 +1362,11 @@ export default function NuevoFletePage() {
   );
 }
 
-// ============================================================
-// ESTILOS
-// ============================================================
-
 const inputClass =
   "w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 dark:border-slate-700 dark:bg-slate-950 dark:text-white";
 
 const selectClass =
   "w-full cursor-pointer appearance-auto rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 dark:border-slate-700 dark:bg-slate-950 dark:text-white";
-
-// ============================================================
-// FIELD
-// ============================================================
 
 function Field({
   label,
@@ -1408,10 +1394,6 @@ function Field({
   );
 }
 
-// ============================================================
-// SELECT DE CATÁLOGO
-// ============================================================
-
 function CatalogSelect({
   value,
   placeholder,
@@ -1420,7 +1402,8 @@ function CatalogSelect({
 }: {
   value: string;
   placeholder: string;
-  options: CatalogOption[];
+  options:
+    CatalogOption[];
   onChange: (
     value: string
   ) => void;
@@ -1459,9 +1442,44 @@ function CatalogSelect({
   );
 }
 
-// ============================================================
-// CAMPO PERSONALIZADO
-// ============================================================
+function MoneyInput({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange: (
+    value: string
+  ) => void;
+}) {
+  return (
+    <Field
+      label={label}
+    >
+      <div className="relative">
+        <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-sm text-slate-400">
+          $
+        </span>
+
+        <input
+          type="number"
+          min="0"
+          step="0.01"
+          inputMode="decimal"
+          value={value}
+          onChange={(event) =>
+            onChange(
+              event.target.value
+            )
+          }
+          placeholder="0.00"
+          className={`${inputClass} pl-8`}
+        />
+      </div>
+    </Field>
+  );
+}
 
 function CustomFieldInput({
   field,
@@ -1470,12 +1488,10 @@ function CustomFieldInput({
 }: {
   field:
     CustomField;
-
   value:
     | string
     | boolean
     | undefined;
-
   onChange: (
     value:
       | string
@@ -1498,7 +1514,13 @@ function CustomFieldInput({
           )}
         </span>
 
-        <label className="flex h-[46px] items-center gap-3 rounded-xl border border-slate-300 bg-white px-4 dark:border-slate-700 dark:bg-slate-950">
+        <label className="flex h-[46px] cursor-pointer items-center justify-between rounded-xl border border-slate-300 bg-white px-4 dark:border-slate-700 dark:bg-slate-950">
+          <span className="text-sm text-slate-600 dark:text-slate-300">
+            {value === true
+              ? "Sí"
+              : "No"}
+          </span>
+
           <input
             type="checkbox"
             checked={
@@ -1509,12 +1531,8 @@ function CustomFieldInput({
                 event.target.checked
               )
             }
-            className="h-5 w-5 accent-emerald-600"
+            className="h-5 w-5 accent-blue-600"
           />
-
-          <span className="text-sm">
-            Sí
-          </span>
         </label>
       </div>
     );
@@ -1538,6 +1556,12 @@ function CustomFieldInput({
                 "date"
               ? "date"
               : "text"
+        }
+        min={
+          field.field_type ===
+          "number"
+            ? undefined
+            : undefined
         }
         step={
           field.field_type ===
