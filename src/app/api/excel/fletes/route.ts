@@ -3,6 +3,49 @@ import { timingSafeEqual } from "crypto";
 
 export const dynamic = "force-dynamic";
 
+type MainColumnSetting = {
+  column_key: string;
+  label: string;
+  visible: boolean;
+  sort_order: number;
+};
+
+type CustomFieldDefinition = {
+  field_key: string;
+  label: string;
+  field_type: "text" | "number" | "date" | "boolean";
+  visible: boolean;
+  required: boolean;
+  sort_order: number;
+};
+
+type FreightService = {
+  folio: number;
+  service_date: string | null;
+  unit: string | null;
+  invoice: string | null;
+  client: string | null;
+  service_type: string | null;
+  category: string | null;
+  container: string | null;
+  weight: number | null;
+  destination: string | null;
+  rodrigo_cash_freight: number | null;
+  invoice_freight: number | null;
+  carlos_cash_advance: number | null;
+  carlos_invoice_payment: number | null;
+  observations: string | null;
+  custom_fields: Record<string, unknown> | null;
+  created_at: string | null;
+  updated_at: string | null;
+};
+
+type ExcelValue =
+  | string
+  | number
+  | boolean
+  | null;
+
 function safeTokenCompare(
   receivedToken: string,
   expectedToken: string
@@ -26,12 +69,136 @@ function safeTokenCompare(
   );
 }
 
+function normalizeCustomValue(
+  value: unknown,
+  fieldType: CustomFieldDefinition["field_type"]
+): ExcelValue {
+  if (
+    value === null ||
+    value === undefined ||
+    value === ""
+  ) {
+    if (fieldType === "number") {
+      return 0;
+    }
+
+    return "";
+  }
+
+  if (fieldType === "number") {
+    const numericValue = Number(value);
+
+    return Number.isFinite(numericValue)
+      ? numericValue
+      : 0;
+  }
+
+  if (fieldType === "boolean") {
+    if (
+      value === true ||
+      value === "true" ||
+      value === 1 ||
+      value === "1"
+    ) {
+      return "Sí";
+    }
+
+    if (
+      value === false ||
+      value === "false" ||
+      value === 0 ||
+      value === "0"
+    ) {
+      return "No";
+    }
+
+    return "";
+  }
+
+  return String(value);
+}
+
+function getMainColumnValue(
+  service: FreightService,
+  columnKey: string
+): ExcelValue {
+  switch (columnKey) {
+    case "folio":
+      return `F-${String(
+        service.folio
+      ).padStart(4, "0")}`;
+
+    case "service_date":
+      return service.service_date ?? "";
+
+    case "unit":
+      return service.unit ?? "";
+
+    case "invoice":
+      return service.invoice ?? "";
+
+    case "client":
+      return service.client ?? "";
+
+    case "service_type":
+      return service.service_type ?? "";
+
+    case "category":
+      return service.category ?? "";
+
+    case "container":
+      return service.container ?? "";
+
+    case "weight":
+      return service.weight ?? null;
+
+    case "destination":
+      return service.destination ?? "";
+
+    case "rodrigo_cash_freight":
+      return (
+        service.rodrigo_cash_freight ??
+        0
+      );
+
+    case "invoice_freight":
+      return (
+        service.invoice_freight ??
+        0
+      );
+
+    case "carlos_cash_advance":
+      return (
+        service.carlos_cash_advance ??
+        0
+      );
+
+    case "carlos_invoice_payment":
+      return (
+        service.carlos_invoice_payment ??
+        0
+      );
+
+    case "observations":
+      return service.observations ?? "";
+
+    case "created_at":
+      return service.created_at ?? "";
+
+    case "updated_at":
+      return service.updated_at ?? "";
+
+    default:
+      return "";
+  }
+}
+
 export async function GET(
   request: Request
 ) {
   try {
     // =====================================================
-    // VARIABLES PRIVADAS
+    // VARIABLES DE ENTORNO
     // =====================================================
 
     const supabaseUrl =
@@ -130,7 +297,7 @@ export async function GET(
     }
 
     // =====================================================
-    // CLIENTE SUPABASE PRIVADO
+    // CLIENTE SUPABASE
     // =====================================================
 
     const supabase =
@@ -147,14 +314,114 @@ export async function GET(
       );
 
     // =====================================================
-    // CONSULTA SOLO LECTURA
+    // CONFIGURACIÓN DE COLUMNAS PRINCIPALES
     // =====================================================
 
     const {
-      data,
-      error,
+      data: mainColumnsData,
+      error: mainColumnsError,
     } = await supabase
-      .from("freight_services")
+      .from(
+        "freight_column_settings"
+      )
+      .select(`
+        column_key,
+        label,
+        visible,
+        sort_order
+      `)
+      .order(
+        "sort_order",
+        {
+          ascending: true,
+        }
+      );
+
+    if (mainColumnsError) {
+      console.error(
+        "Error cargando columnas principales:",
+        mainColumnsError
+      );
+
+      return Response.json(
+        {
+          ok: false,
+          error:
+            "No se pudo cargar la configuración de columnas.",
+        },
+        {
+          status: 500,
+        }
+      );
+    }
+
+    const mainColumns =
+      (
+        mainColumnsData ??
+        []
+      ) as MainColumnSetting[];
+
+    // =====================================================
+    // CAMPOS PERSONALIZADOS
+    // =====================================================
+
+    const {
+      data: customFieldsData,
+      error: customFieldsError,
+    } = await supabase
+      .from(
+        "freight_custom_fields"
+      )
+      .select(`
+        field_key,
+        label,
+        field_type,
+        visible,
+        required,
+        sort_order
+      `)
+      .order(
+        "sort_order",
+        {
+          ascending: true,
+        }
+      );
+
+    if (customFieldsError) {
+      console.error(
+        "Error cargando campos personalizados:",
+        customFieldsError
+      );
+
+      return Response.json(
+        {
+          ok: false,
+          error:
+            "No se pudieron cargar los campos personalizados.",
+        },
+        {
+          status: 500,
+        }
+      );
+    }
+
+    const customFields =
+      (
+        customFieldsData ??
+        []
+      ) as CustomFieldDefinition[];
+
+    // =====================================================
+    // CONSULTA DE FLETES
+    // =====================================================
+
+    const {
+      data: servicesData,
+      error: servicesError,
+    } = await supabase
+      .from(
+        "freight_services"
+      )
       .select(`
         folio,
         service_date,
@@ -162,6 +429,7 @@ export async function GET(
         invoice,
         client,
         service_type,
+        category,
         container,
         weight,
         destination,
@@ -170,6 +438,7 @@ export async function GET(
         carlos_cash_advance,
         carlos_invoice_payment,
         observations,
+        custom_fields,
         created_at,
         updated_at
       `)
@@ -186,10 +455,10 @@ export async function GET(
         }
       );
 
-    if (error) {
+    if (servicesError) {
       console.error(
         "Error Supabase Excel:",
-        error
+        servicesError
       );
 
       return Response.json(
@@ -204,71 +473,117 @@ export async function GET(
       );
     }
 
+    const services =
+      (
+        servicesData ??
+        []
+      ) as FreightService[];
+
     // =====================================================
-    // FORMATO PARA EXCEL
+    // COLUMNAS VISIBLES
+    // =====================================================
+
+    const visibleMainColumns =
+      mainColumns.filter(
+        (column) =>
+          column.visible
+      );
+
+    const visibleCustomFields =
+      customFields.filter(
+        (field) =>
+          field.visible
+      );
+
+    // =====================================================
+    // FORMATO DINÁMICO PARA EXCEL
     // =====================================================
 
     const rows =
-      (data ?? []).map(
-        (service) => ({
-          Folio: `F-${String(
-            service.folio
-          ).padStart(4, "0")}`,
+      services.map(
+        (service) => {
+          const row:
+            Record<
+              string,
+              ExcelValue
+            > = {};
 
-          Fecha:
-            service.service_date,
+          // -----------------------------------------------
+          // COLUMNAS PRINCIPALES
+          // -----------------------------------------------
 
-          Unidad:
-            service.unit ?? "",
+          for (
+            const column
+            of visibleMainColumns
+          ) {
+            row[
+              column.label
+            ] =
+              getMainColumnValue(
+                service,
+                column.column_key
+              );
+          }
 
-          Factura:
-            service.invoice ?? "",
+          // -----------------------------------------------
+          // CAMPOS PERSONALIZADOS
+          // -----------------------------------------------
 
-          Cliente:
-            service.client ?? "",
+          const customValues =
+            service.custom_fields ??
+            {};
 
-          Tipo:
-            service.service_type ??
-            "",
+          for (
+            const field
+            of visibleCustomFields
+          ) {
+            const value =
+              customValues[
+                field.field_key
+              ];
 
-          Contenedor:
-            service.container ??
-            "",
+            row[
+              field.label
+            ] =
+              normalizeCustomValue(
+                value,
+                field.field_type
+              );
+          }
 
-          Peso:
-            service.weight ?? null,
-
-          Destino:
-            service.destination ??
-            "",
-
-          Flete_Rodrigo:
-            service.rodrigo_cash_freight ??
-            0,
-
-          Flete_Factura:
-            service.invoice_freight ??
-            0,
-
-          Anticipo_Carlos:
-            service.carlos_cash_advance ??
-            0,
-
-          Pago_Carlos:
-            service.carlos_invoice_payment ??
-            0,
-
-          Observaciones:
-            service.observations ??
-            "",
-
-          Creado:
-            service.created_at,
-
-          Actualizado:
-            service.updated_at,
-        })
+          return row;
+        }
       );
+
+    // =====================================================
+    // METADATOS DE COLUMNAS
+    // =====================================================
+
+    const columns = [
+      ...visibleMainColumns.map(
+        (column) => ({
+          type: "main",
+          key:
+            column.column_key,
+          label:
+            column.label,
+          sort_order:
+            column.sort_order,
+        })
+      ),
+
+      ...visibleCustomFields.map(
+        (field) => ({
+          type: "custom",
+          key:
+            field.field_key,
+          label:
+            field.label,
+          sort_order:
+            field.sort_order,
+        })
+      ),
+    ];
 
     // =====================================================
     // RESPUESTA
@@ -283,6 +598,8 @@ export async function GET(
 
         total:
           rows.length,
+
+        columns,
 
         data:
           rows,

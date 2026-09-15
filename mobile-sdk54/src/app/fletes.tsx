@@ -12,13 +12,16 @@ import {
   Modal,
   Pressable,
   RefreshControl,
-  SafeAreaView,
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
   View,
 } from "react-native";
+
+import {
+  SafeAreaView,
+} from "react-native-safe-area-context";
 
 import {
   router,
@@ -39,6 +42,26 @@ type Profile = {
   full_name: string | null;
   role: Role;
   active: boolean;
+};
+
+type MainColumnSetting = {
+  column_key: string;
+  label: string;
+  visible: boolean;
+  sort_order: number;
+};
+
+type CustomFieldDefinition = {
+  field_key: string;
+  label: string;
+  field_type:
+    | "text"
+    | "number"
+    | "date"
+    | "boolean";
+  visible: boolean;
+  required: boolean;
+  sort_order: number;
 };
 
 type FreightService = {
@@ -90,6 +113,9 @@ type FreightService = {
 
   observations:
     string | null;
+
+  custom_fields:
+    Record<string, unknown> | null;
 
   created_at:
     string | null;
@@ -193,6 +219,44 @@ function safeText(
   return String(value);
 }
 
+function formatCustomValue(
+  value: unknown,
+  fieldType:
+    CustomFieldDefinition["field_type"]
+) {
+  if (
+    value === null ||
+    value === undefined ||
+    value === ""
+  ) {
+    return "—";
+  }
+
+  if (
+    fieldType === "boolean"
+  ) {
+    if (
+      value === true ||
+      value === "true" ||
+      value === 1 ||
+      value === "1"
+    ) {
+      return "Sí";
+    }
+
+    if (
+      value === false ||
+      value === "false" ||
+      value === 0 ||
+      value === "0"
+    ) {
+      return "No";
+    }
+  }
+
+  return String(value);
+}
+
 export default function FletesScreen() {
   const [
     loading,
@@ -224,6 +288,22 @@ export default function FletesScreen() {
   ] =
     useState<
       FreightService[]
+    >([]);
+
+  const [
+    mainColumns,
+    setMainColumns,
+  ] =
+    useState<
+      MainColumnSetting[]
+    >([]);
+
+  const [
+    customFields,
+    setCustomFields,
+  ] =
+    useState<
+      CustomFieldDefinition[]
     >([]);
 
   const [
@@ -332,6 +412,92 @@ export default function FletesScreen() {
 
           const {
             data:
+              mainColumnsData,
+
+            error:
+              mainColumnsError,
+          } =
+            await supabase
+              .from(
+                "freight_column_settings"
+              )
+              .select(
+                `
+                column_key,
+                label,
+                visible,
+                sort_order
+                `
+              )
+              .order(
+                "sort_order",
+                {
+                  ascending:
+                    true,
+                }
+              );
+
+          if (
+            mainColumnsError
+          ) {
+            throw new Error(
+              `No se pudo cargar la configuración de columnas: ${mainColumnsError.message}`
+            );
+          }
+
+          setMainColumns(
+            (
+              mainColumnsData ??
+              []
+            ) as MainColumnSetting[]
+          );
+
+          const {
+            data:
+              customFieldsData,
+
+            error:
+              customFieldsError,
+          } =
+            await supabase
+              .from(
+                "freight_custom_fields"
+              )
+              .select(
+                `
+                field_key,
+                label,
+                field_type,
+                visible,
+                required,
+                sort_order
+                `
+              )
+              .order(
+                "sort_order",
+                {
+                  ascending:
+                    true,
+                }
+              );
+
+          if (
+            customFieldsError
+          ) {
+            throw new Error(
+              `No se pudieron cargar los campos personalizados: ${customFieldsError.message}`
+            );
+          }
+
+          setCustomFields(
+            (
+              customFieldsData ??
+              []
+            ) as CustomFieldDefinition[]
+          );
+
+          const {
+            data:
               freightData,
 
             error:
@@ -359,6 +525,7 @@ export default function FletesScreen() {
                 carlos_cash_advance,
                 carlos_invoice_payment,
                 observations,
+                custom_fields,
                 created_at,
                 updated_at
                 `
@@ -466,6 +633,87 @@ export default function FletesScreen() {
       fletes,
       search,
     ]);
+
+  const getColumn =
+    useCallback(
+      (
+        columnKey: string
+      ) => {
+        return (
+          mainColumns.find(
+            (
+              column
+            ) =>
+              column.column_key ===
+              columnKey
+          ) ??
+          null
+        );
+      },
+      [
+        mainColumns,
+      ]
+    );
+
+  const getColumnLabel =
+    useCallback(
+      (
+        columnKey: string,
+        fallback: string
+      ) => {
+        return (
+          getColumn(
+            columnKey
+          )?.label ??
+          fallback
+        );
+      },
+      [
+        getColumn,
+      ]
+    );
+
+  const isColumnVisible =
+    useCallback(
+      (
+        columnKey: string
+      ) => {
+        const column =
+          getColumn(
+            columnKey
+          );
+
+        return column
+          ? column.visible
+          : true;
+      },
+      [
+        getColumn,
+      ]
+    );
+
+  const visibleCustomFields =
+    useMemo(
+      () =>
+        customFields
+          .filter(
+            (
+              field
+            ) =>
+              field.visible
+          )
+          .sort(
+            (
+              first,
+              second
+            ) =>
+              first.sort_order -
+              second.sort_order
+          ),
+      [
+        customFields,
+      ]
+    );
 
   const totalInvoice =
     useMemo(() => {
@@ -1013,7 +1261,10 @@ export default function FletesScreen() {
                     styles.folioLabel
                   }
                 >
-                  FOLIO
+                  {getColumnLabel(
+                    "folio",
+                    "Folio"
+                  ).toUpperCase()}
                 </Text>
 
                 <Text
@@ -1072,7 +1323,10 @@ export default function FletesScreen() {
                     styles.metaLabel
                   }
                 >
-                  UNIDAD
+                  {getColumnLabel(
+                    "unit",
+                    "Unidad"
+                  ).toUpperCase()}
                 </Text>
 
                 <Text
@@ -1096,7 +1350,10 @@ export default function FletesScreen() {
                     styles.metaLabel
                   }
                 >
-                  TIPO
+                  {getColumnLabel(
+                    "service_type",
+                    "Tipo"
+                  ).toUpperCase()}
                 </Text>
 
                 <Text
@@ -1126,7 +1383,10 @@ export default function FletesScreen() {
                     styles.metaLabel
                   }
                 >
-                  CATEGORÍA
+                  {getColumnLabel(
+                    "category",
+                    "Categoría"
+                  ).toUpperCase()}
                 </Text>
 
                 <Text
@@ -1150,7 +1410,10 @@ export default function FletesScreen() {
                     styles.metaLabel
                   }
                 >
-                  DESTINO
+                  {getColumnLabel(
+                    "destination",
+                    "Destino"
+                  ).toUpperCase()}
                 </Text>
 
                 <Text
@@ -1179,7 +1442,10 @@ export default function FletesScreen() {
                     styles.moneyLabel
                   }
                 >
-                  Flete factura
+                  {getColumnLabel(
+                    "invoice_freight",
+                    "Flete factura"
+                  )}
                 </Text>
 
                 <Text
@@ -1342,133 +1608,282 @@ export default function FletesScreen() {
                 )}
               </View>
 
-              <DetailRow
-                label="Fecha"
-                value={formatDate(
-                  selectedFreight.service_date
-                )}
-              />
+              {isColumnVisible(
+                "service_date"
+              ) && (
+                <DetailRow
+                  label={getColumnLabel(
+                    "service_date",
+                    "Fecha"
+                  )}
+                  value={formatDate(
+                    selectedFreight.service_date
+                  )}
+                />
+              )}
 
-              <DetailRow
-                label="Unidad"
-                value={safeText(
-                  selectedFreight.unit
-                )}
-              />
+              {isColumnVisible(
+                "unit"
+              ) && (
+                <DetailRow
+                  label={getColumnLabel(
+                    "unit",
+                    "Unidad"
+                  )}
+                  value={safeText(
+                    selectedFreight.unit
+                  )}
+                />
+              )}
 
-              <DetailRow
-                label="Factura"
-                value={safeText(
-                  selectedFreight.invoice
-                )}
-              />
+              {isColumnVisible(
+                "invoice"
+              ) && (
+                <DetailRow
+                  label={getColumnLabel(
+                    "invoice",
+                    "Factura"
+                  )}
+                  value={safeText(
+                    selectedFreight.invoice
+                  )}
+                />
+              )}
 
-              <DetailRow
-                label="Cliente"
-                value={safeText(
-                  selectedFreight.client
-                )}
-              />
+              {isColumnVisible(
+                "client"
+              ) && (
+                <DetailRow
+                  label={getColumnLabel(
+                    "client",
+                    "Cliente"
+                  )}
+                  value={safeText(
+                    selectedFreight.client
+                  )}
+                />
+              )}
 
-              <DetailRow
-                label="Tipo"
-                value={safeText(
-                  selectedFreight.service_type
-                )}
-              />
+              {isColumnVisible(
+                "service_type"
+              ) && (
+                <DetailRow
+                  label={getColumnLabel(
+                    "service_type",
+                    "Tipo"
+                  )}
+                  value={safeText(
+                    selectedFreight.service_type
+                  )}
+                />
+              )}
 
-              <DetailRow
-                label="Categoría"
-                value={safeText(
-                  selectedFreight.category
-                )}
-              />
+              {isColumnVisible(
+                "category"
+              ) && (
+                <DetailRow
+                  label={getColumnLabel(
+                    "category",
+                    "Categoría"
+                  )}
+                  value={safeText(
+                    selectedFreight.category
+                  )}
+                />
+              )}
 
-              <DetailRow
-                label="Contenedor"
-                value={safeText(
-                  selectedFreight.container
-                )}
-              />
+              {isColumnVisible(
+                "container"
+              ) && (
+                <DetailRow
+                  label={getColumnLabel(
+                    "container",
+                    "Contenedor"
+                  )}
+                  value={safeText(
+                    selectedFreight.container
+                  )}
+                />
+              )}
 
-              <DetailRow
-                label="Peso"
-                value={
-                  selectedFreight.weight !==
-                  null
-                    ? String(
-                        selectedFreight.weight
-                      )
-                    : "—"
-                }
-              />
+              {isColumnVisible(
+                "weight"
+              ) && (
+                <DetailRow
+                  label={getColumnLabel(
+                    "weight",
+                    "Peso"
+                  )}
+                  value={
+                    selectedFreight.weight !==
+                    null
+                      ? String(
+                          selectedFreight.weight
+                        )
+                      : "—"
+                  }
+                />
+              )}
 
-              <DetailRow
-                label="Destino"
-                value={safeText(
-                  selectedFreight.destination
-                )}
-              />
+              {isColumnVisible(
+                "destination"
+              ) && (
+                <DetailRow
+                  label={getColumnLabel(
+                    "destination",
+                    "Destino"
+                  )}
+                  value={safeText(
+                    selectedFreight.destination
+                  )}
+                />
+              )}
 
-              <Text
-                style={
-                  styles.modalSectionTitle
-                }
-              >
-                Importes
-              </Text>
-
-              <MoneyDetail
-                label="Flete efectivo Rodrigo"
-                value={
-                  selectedFreight.rodrigo_cash_freight
-                }
-              />
-
-              <MoneyDetail
-                label="Flete factura"
-                value={
-                  selectedFreight.invoice_freight
-                }
-              />
-
-              <MoneyDetail
-                label="Anticipo efectivo Carlos"
-                value={
-                  selectedFreight.carlos_cash_advance
-                }
-              />
-
-              <MoneyDetail
-                label="Pago factura Carlos"
-                value={
-                  selectedFreight.carlos_invoice_payment
-                }
-              />
-
-              <Text
-                style={
-                  styles.modalSectionTitle
-                }
-              >
-                Observaciones
-              </Text>
-
-              <View
-                style={
-                  styles.observationsCard
-                }
-              >
+              {(
+                isColumnVisible(
+                  "rodrigo_cash_freight"
+                ) ||
+                isColumnVisible(
+                  "invoice_freight"
+                ) ||
+                isColumnVisible(
+                  "carlos_cash_advance"
+                ) ||
+                isColumnVisible(
+                  "carlos_invoice_payment"
+                )
+              ) && (
                 <Text
                   style={
-                    styles.observationsText
+                    styles.modalSectionTitle
                   }
                 >
-                  {safeText(
-                    selectedFreight.observations
-                  )}
+                  Importes
                 </Text>
-              </View>
+              )}
+
+              {isColumnVisible(
+                "rodrigo_cash_freight"
+              ) && (
+                <MoneyDetail
+                  label={getColumnLabel(
+                    "rodrigo_cash_freight",
+                    "Flete efectivo Rodrigo"
+                  )}
+                  value={
+                    selectedFreight.rodrigo_cash_freight
+                  }
+                />
+              )}
+
+              {isColumnVisible(
+                "invoice_freight"
+              ) && (
+                <MoneyDetail
+                  label={getColumnLabel(
+                    "invoice_freight",
+                    "Flete factura"
+                  )}
+                  value={
+                    selectedFreight.invoice_freight
+                  }
+                />
+              )}
+
+              {isColumnVisible(
+                "carlos_cash_advance"
+              ) && (
+                <MoneyDetail
+                  label={getColumnLabel(
+                    "carlos_cash_advance",
+                    "Anticipo efectivo Carlos"
+                  )}
+                  value={
+                    selectedFreight.carlos_cash_advance
+                  }
+                />
+              )}
+
+              {isColumnVisible(
+                "carlos_invoice_payment"
+              ) && (
+                <MoneyDetail
+                  label={getColumnLabel(
+                    "carlos_invoice_payment",
+                    "Pago factura Carlos"
+                  )}
+                  value={
+                    selectedFreight.carlos_invoice_payment
+                  }
+                />
+              )}
+
+              {visibleCustomFields.length >
+                0 && (
+                <>
+                  <Text
+                    style={
+                      styles.modalSectionTitle
+                    }
+                  >
+                    Campos adicionales
+                  </Text>
+
+                  {visibleCustomFields.map(
+                    (
+                      field
+                    ) => (
+                      <DetailRow
+                        key={
+                          field.field_key
+                        }
+                        label={
+                          field.label
+                        }
+                        value={formatCustomValue(
+                          selectedFreight.custom_fields?.[
+                            field.field_key
+                          ],
+                          field.field_type
+                        )}
+                      />
+                    )
+                  )}
+                </>
+              )}
+
+              {isColumnVisible(
+                "observations"
+              ) && (
+                <>
+                  <Text
+                    style={
+                      styles.modalSectionTitle
+                    }
+                  >
+                    {getColumnLabel(
+                      "observations",
+                      "Observaciones"
+                    )}
+                  </Text>
+
+                  <View
+                    style={
+                      styles.observationsCard
+                    }
+                  >
+                    <Text
+                      style={
+                        styles.observationsText
+                      }
+                    >
+                      {safeText(
+                        selectedFreight.observations
+                      )}
+                    </Text>
+                  </View>
+                </>
+              )}
 
               <Pressable
                 onPress={() =>
